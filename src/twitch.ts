@@ -75,10 +75,15 @@ export async function getClipVideoUrl(slug: string): Promise<string> {
     }
   `;
 
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  if (!clientId) {
+    throw new Error('TWITCH_CLIENT_ID is not defined in the environment. Please add it to your .env or .env.local file.');
+  }
+
   const response = await fetch('https://gql.twitch.tv/gql', {
     method: 'POST',
     headers: {
-      'Client-ID': process.env.TWITCH_CLIENT_ID || 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+      'Client-ID': clientId,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
