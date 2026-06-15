@@ -168,6 +168,9 @@ function parseRawOcrLines(
 
   const rows: ScoreboardRow[] = [];
 
+  const cleanDigitsOnly = (str: string) => str.replace(/O|o/g, '0').replace(/[^\d]/g, '');
+  const cleanStatsOnly = (str: string) => str.replace(/O|o/g, '0').replace(/[^\d/]/g, '');
+
   for (const ocrLine of ocrLines) {
     const line = ocrLine.text.trim();
     if (!line) continue;
@@ -182,15 +185,15 @@ function parseRawOcrLines(
     let stats: string[] = [];
 
     if (parts.length >= expectedMinParts) {
-      rank = parts[0];
-      stats = parts.slice(-numStats).map((s) => s.replace(/O|o/g, '0'));
-      score = parts[parts.length - numStats - 1].replace(/O|o/g, '0');
+      rank = cleanDigitsOnly(parts[0]);
+      stats = parts.slice(-numStats).map(cleanStatsOnly);
+      score = cleanDigitsOnly(parts[parts.length - numStats - 1]);
       name = parts.slice(1, parts.length - numStats - 1).join(' ');
     } else {
-      rank = parts[0];
+      rank = cleanDigitsOnly(parts[0]);
       name = parts[1];
-      score = parts[2] ? parts[2].replace(/O|o/g, '0') : '0';
-      stats = parts.slice(3).map((s) => s.replace(/O|o/g, '0'));
+      score = parts[2] ? cleanDigitsOnly(parts[2]) : '0';
+      stats = parts.slice(3).map(cleanStatsOnly);
     }
 
     const cleanedName = name.replace(/^[^a-zA-Z]+/, '').replace(/~+$/, '').trim();

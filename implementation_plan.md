@@ -1,38 +1,35 @@
 # Implementation Plan - Scoreboard Reader
 
-This plan outlines the design and implementation steps for building the remaining phases of the scoreboard reader tool, including the new "Side" color extraction feature.
+This plan outlines the design and implementation steps for building the remaining phases of the scoreboard reader tool, focusing on the CLI command refactoring.
 
 ## Proposed Changes
 
-### OCR & CSV Extraction (`src/ocr.ts`)
+### CLI Integration
 
-We will add team/side color detection by sampling background pixels at the y-coordinate of each parsed player row.
+We will reorganize the CLI commands in [src/index.ts](file:///home/goatfryed/com.github/goatfryed/nw-scoreboard-reader/src/index.ts):
 
-#### Logic & Helpers
-1. **Line Coordinates from OCR**:
-   - Update `performOCR` to return both raw text and a list of parsed lines containing their vertical center coordinate (`yCenter`) extracted from Tesseract's bounding boxes (`bbox`).
-2. **Dependency**:
-   - Install `color-convert` package to handle color space conversion: `pnpm add color-convert`.
-3. **Color Detection (`detectSideColor`)**:
-   - Read the original color stitched image raw pixel buffer using `sharp`.
-   - For each line's `yCenter` (mapped back to the original image scale), sample a 10x10px rectangle at the end of the row:
-     - X-range: `[width - 20, width - 10]` (leaving a 10px padding to the right edge).
-     - Y-range: `[yCenter - 5, yCenter + 5]` (centered on the line's vertical center).
-   - Average the RGB values in this 10x10px block.
-   - Match the average Hue to predefined ranges:
-     - **Red**: `H >= 325` or `H < 20`
-     - **Orange**: `20 <= H < 50`
-     - **Green**: `75 <= H < 160`
-     - **Blue**: `170 <= H < 255`
-     - **Purple**: `255 <= H < 325`
-4. **Data Structure & CSV Export**:
-   - Add a `side` field to `ScoreboardRow`.
-   - Update `writeToCsv` to include the "Side" column as the first column in the CSV.
+1. **Root-Level Default Command**:
+   - Usage: `pnpm start <clip-url>` (or `npx ts-node src/index.ts <clip-url>`)
+   - If a URL is passed directly without any subcommand, execute the full pipeline:
+     - Download the clip to `.tmp/clip.mp4`.
+     - Parse the downloaded video to `.tmp/scoreboard.csv` (using default options).
+     - Upload the resulting CSV to Google Sheets.
+
+2. **Subcommands**:
+   - **`clip <clip-url>`**:
+     - Downloads the Twitch clip.
+     - Option `-o, --output <path>`: Destination path (default: `.tmp/clip.mp4`).
+   - **`parse`**:
+     - Extracts frames, stitches them, and performs OCR/CSV extraction.
+     - Option `-i, --input <path>`: Path to the downloaded video (default: `.tmp/clip.mp4`).
+     - Option `-o, --output <path>`: Path to the stitched image output (default: `.tmp/stitched.png`).
+     - Option `--csv <path>`: CSV file path output (default: `.tmp/scoreboard.csv` or `CSV_PATH`).
+     - Option `--fps <number>`, `--game-type <type>`, `--screen <name>`.
+   - **`upload`**:
+     - Uploads CSV data to Google Sheets.
+     - Option `--csv <path>`: Path to the CSV file to upload (default: `.tmp/scoreboard.csv` or `CSV_PATH`).
 
 ---
-
-### Phase 4: Google Sheets Integration (Upload Command)
-- Already implemented: parses CSV lines dynamically and pushes all columns to the sheet.
 
 ### Phase 5: Dashboard Screenshotting
 1. Launch Playwright headless browser.
@@ -44,13 +41,15 @@ We will add team/side color detection by sampling background pixels at the y-coo
 ## Verification Plan
 
 ### Manual Verification
-1. Run CLI with the sample clip:
+1. Run the full pipeline via root command:
    ```bash
    pnpm start "https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2"
    ```
-2. Verify that the output CSV starts with a `Side` column matching the player's team background color (red, blue, etc.) for each row.
-3. Run the Sheets upload command:
+   Verify that it downloads, parses, and uploads to Google Sheets.
+2. Run individual commands:
    ```bash
+   pnpm start clip "https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2"
+   pnpm start parse
    GOOGLE_APPLICATION_CREDENTIALS=./credentials.json pnpm start upload
    ```
-4. Verify that the data is cleanly updated in Google Sheets including the `Side` column.
+   Verify that each step operates correctly using its default parameters.
