@@ -27,6 +27,18 @@ program
       console.log(`FPS:      ${options.fps}`);
 
       const tempDir = path.join(process.cwd(), '.tmp');
+      
+      if (fs.existsSync(tempDir)) {
+        for (const file of fs.readdirSync(tempDir)) {
+          const filePath = path.join(tempDir, file);
+          if (file.endsWith('.mp4') || file === 'frames') {
+            fs.rmSync(filePath, { recursive: true, force: true });
+          }
+        }
+      } else {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
       console.log(`Starting processing for clip...`);
       
       const downloadedPath = await downloadClip(clipUrl, tempDir);
