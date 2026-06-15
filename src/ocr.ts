@@ -4,8 +4,9 @@ import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import convert from 'color-convert';
 
-const OprStats = ["kda", "damage", "healing", "blocked", "resources"];
-const WarStats = ["kda", "damage", "healing"];
+const OprRawStats = ["kda", "damage", "healing", "blocked", "resources"];
+const OprCsvHeaders = ["kills", "deaths", "assists", "damage", "healing", "blocked", "resources"];
+const WarStats = ["kills", "deaths", "assists", "damage", "healing"];
 
 interface ScoreboardRow {
   side: string;
@@ -162,7 +163,7 @@ function parseRawOcrLines(
   rgbChannels: number
 ): ScoreboardRow[] {
   const gameType = process.env.GAME_TYPE || 'opr';
-  const statsList = gameType === 'war' ? WarStats : OprStats;
+  const statsList = gameType === 'war' ? WarStats : OprRawStats;
   const numStats = statsList.length;
   const expectedMinParts = numStats + 3; // Rank + Name + Score + Stats
 
@@ -204,6 +205,15 @@ function parseRawOcrLines(
     }
     if (stats.length > numStats) {
       stats = stats.slice(0, numStats);
+    }
+
+    if (gameType === 'opr') {
+      const kdaStr = stats[0] || '0/0/0';
+      const kdaParts = kdaStr.split('/');
+      const kills = kdaParts[0] || '0';
+      const deaths = kdaParts[1] || '0';
+      const assists = kdaParts[2] || '0';
+      stats = [kills, deaths, assists, ...stats.slice(1)];
     }
 
     const originalY = Math.round(ocrLine.yCenter / 2);
@@ -273,7 +283,7 @@ function classifyColor(r: number, g: number, b: number): string {
 
 function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string): void {
   const gameType = process.env.GAME_TYPE || 'opr';
-  const statsList = gameType === 'war' ? WarStats : OprStats;
+  const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
 
   const outDir = path.dirname(csvOutputPath);
   if (!fs.existsSync(outDir)) {
