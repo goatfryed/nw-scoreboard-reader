@@ -54,9 +54,6 @@ interface GQLClipResponse {
   };
 }
 
-/**
- * Resolves the direct MP4 download URL for a Twitch clip.
- */
 export async function getClipVideoUrl(slug: string): Promise<string> {
   const query = `
     query($slug: ID!) {
@@ -117,9 +114,6 @@ export async function getClipVideoUrl(slug: string): Promise<string> {
   return finalUrl;
 }
 
-/**
- * Downloads a URL to a local file path.
- */
 export function downloadFile(url: string, destPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destPath);
@@ -140,9 +134,6 @@ export function downloadFile(url: string, destPath: string): Promise<void> {
   });
 }
 
-/**
- * Main function to resolve and download a Twitch clip MP4.
- */
 export async function downloadClip(url: string, destDir: string): Promise<string> {
   const slug = extractClipSlug(url);
   console.log(`Resolved clip slug: ${slug}`);
