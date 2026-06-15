@@ -23,7 +23,8 @@ interface OcrLine {
 
 export async function extractScoreboardToCsv(
   imagePath: string,
-  csvOutputPath: string
+  csvOutputPath: string,
+  startTime: Date = new Date()
 ): Promise<void> {
   const preprocessedPath = await preprocessImageForOCR(imagePath);
 
@@ -66,7 +67,7 @@ export async function extractScoreboardToCsv(
   );
 
   console.log(`Writing structured data to CSV: ${csvOutputPath}`);
-  writeToCsv(rows, csvOutputPath);
+  writeToCsv(rows, csvOutputPath, startTime);
   console.log('CSV export complete!');
 }
 
@@ -281,7 +282,16 @@ function classifyColor(r: number, g: number, b: number): string {
   return 'unknown';
 }
 
-function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string): void {
+function formatDateTime(date: Date): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string, startTime: Date): void {
   const gameType = process.env.GAME_TYPE || 'opr';
   const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
 
@@ -290,13 +300,14 @@ function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string): void {
     fs.mkdirSync(outDir, { recursive: true });
   }
 
+  const dateStr = formatDateTime(startTime);
   const statHeaders = statsList.join(',');
-  const header = `Side,Rank,Name,Score,${statHeaders}\n`;
+  const header = `Date,Side,Rank,Name,Score,${statHeaders}\n`;
 
   const csvContent = rows
     .map((r) => {
       const statsFields = r.stats.map((s) => `"${s}"`).join(',');
-      return `"${r.side}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
+      return `"${dateStr}","${r.side}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
     })
     .join('\n');
 

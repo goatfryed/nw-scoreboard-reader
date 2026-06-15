@@ -40,6 +40,7 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .option('--append', 'Append rows to Google Sheet instead of replacing')
   .action(async (clipUrl: string, options: { mode: string; append: boolean }) => {
+    const startTime = new Date();
     try {
       console.log("NW Scoreboard Reader CLI - Full Pipeline");
       console.log("---------------------------------------");
@@ -86,7 +87,7 @@ program
       await cropAndStitchFrames(frames, defaultStitchedPath);
 
       console.log(`Extracting OCR data to ${defaultCsvPath}...`);
-      await extractScoreboardToCsv(defaultStitchedPath, defaultCsvPath);
+      await extractScoreboardToCsv(defaultStitchedPath, defaultCsvPath, startTime);
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
       await uploadCsvToGoogleSheets(defaultCsvPath, options.append);
@@ -144,6 +145,7 @@ program
   .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string }) => {
+    const startTime = new Date();
     try {
       process.env.GAME_TYPE = options.gameType;
 
@@ -174,7 +176,7 @@ program
       console.log("Stitching completed!");
 
       console.log(`Extracting OCR data to ${options.csv}...`);
-      await extractScoreboardToCsv(options.output, options.csv);
+      await extractScoreboardToCsv(options.output, options.csv, startTime);
       console.log("OCR and CSV extraction completed!");
     } catch (err) {
       console.error("Parsing failed:", err);
