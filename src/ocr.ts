@@ -2,15 +2,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+import convert from 'color-convert';
 
 const OprStats = ["kda", "damage", "healing", "blocked", "resources"];
 const WarStats = ["kda", "damage", "healing"];
 
 interface ScoreboardRow {
+  side: string;
   rank: string;
   name: string;
   score: string;
   stats: string[];
+}
+
+interface OcrLine {
+  text: string;
+  yCenter: number;
 }
 
 export async function extractScoreboardToCsv(
@@ -20,7 +27,7 @@ export async function extractScoreboardToCsv(
   const preprocessedPath = await preprocessImageForOCR(imagePath);
 
   console.log(`Running OCR on preprocessed image...`);
-  const rawText = await performOCR(preprocessedPath);
+  const { text: rawText, lines: ocrLines } = await performOCR(preprocessedPath);
 
   try {
     fs.copyFileSync(preprocessedPath, path.join(path.dirname(imagePath), 'preprocessed.png'));
@@ -30,8 +37,32 @@ export async function extractScoreboardToCsv(
     fs.unlinkSync(preprocessedPath);
   } catch (e) { }
 
-  console.log('Parsing raw OCR text...');
-  const rows = parseRawOcrText(rawText);
+  const originalMetadata = await sharp(imagePath).metadata();
+  const originalHeight = originalMetadata.height || 0;
+
+  const { data: rgbBuffer, info: rgbInfo } = await sharp(imagePath)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  if (ocrLines.length === 0 && rawText.trim()) {
+    const rawLines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const estRowHeight = originalHeight / rawLines.length;
+    for (let i = 0; i < rawLines.length; i++) {
+      ocrLines.push({
+        text: rawLines[i],
+        yCenter: (i + 0.5) * estRowHeight * 2,
+      });
+    }
+  }
+
+  console.log('Parsing raw OCR text and detecting row colors...');
+  const rows = parseRawOcrLines(
+    ocrLines,
+    rgbBuffer,
+    rgbInfo.width,
+    rgbInfo.height,
+    rgbInfo.channels
+  );
 
   console.log(`Writing structured data to CSV: ${csvOutputPath}`);
   writeToCsv(rows, csvOutputPath);
@@ -101,23 +132,46 @@ function eraseIconColumn(
   }
 }
 
-async function performOCR(imagePath: string): Promise<string> {
+async function performOCR(imagePath: string): Promise<{ text: string; lines: OcrLine[] }> {
   const worker = await createWorker('eng');
-  const { data: { text } } = await worker.recognize(imagePath);
+  const { data } = await worker.recognize(imagePath);
+
+  const lines: OcrLine[] = [];
+  if (data.lines) {
+    for (const line of data.lines) {
+      const bbox = line.bbox;
+      if (bbox) {
+        const yCenter = (bbox.y0 + bbox.y1) / 2;
+        lines.push({
+          text: line.text,
+          yCenter,
+        });
+      }
+    }
+  }
+
   await worker.terminate();
-  return text;
+  return { text: data.text, lines };
 }
 
-function parseRawOcrText(text: string): ScoreboardRow[] {
+function parseRawOcrLines(
+  ocrLines: OcrLine[],
+  rgbBuffer: Buffer,
+  rgbWidth: number,
+  rgbHeight: number,
+  rgbChannels: number
+): ScoreboardRow[] {
   const gameType = process.env.GAME_TYPE || 'opr';
   const statsList = gameType === 'war' ? WarStats : OprStats;
   const numStats = statsList.length;
   const expectedMinParts = numStats + 3; // Rank + Name + Score + Stats
 
-  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
   const rows: ScoreboardRow[] = [];
 
-  for (const line of lines) {
+  for (const ocrLine of ocrLines) {
+    const line = ocrLine.text.trim();
+    if (!line) continue;
+
     const cleaned = line.replace(/^[|:.\s]+|[|:.\s]+$/g, '');
     const parts = cleaned.split(/\s+/);
     if (parts.length < 3) continue;
@@ -149,7 +203,11 @@ function parseRawOcrText(text: string): ScoreboardRow[] {
       stats = stats.slice(0, numStats);
     }
 
+    const originalY = Math.round(ocrLine.yCenter / 2);
+    const side = detectSideColor(originalY, rgbBuffer, rgbWidth, rgbHeight, rgbChannels);
+
     rows.push({
+      side,
       rank,
       name,
       score,
@@ -158,6 +216,56 @@ function parseRawOcrText(text: string): ScoreboardRow[] {
   }
 
   return rows;
+}
+
+function detectSideColor(
+  y: number,
+  rgbBuffer: Buffer,
+  width: number,
+  height: number,
+  channels: number
+): string {
+  if (y < 0 || y >= height) return 'unknown';
+
+  const startX = width - 20;
+  const endX = width - 10;
+  const startY = Math.max(0, y - 5);
+  const endY = Math.min(height - 1, y + 4);
+
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let count = 0;
+
+  for (let cy = startY; cy <= endY; cy++) {
+    for (let cx = startX; cx <= endX; cx++) {
+      if (cx >= 0 && cx < width) {
+        const idx = (cy * width + cx) * channels;
+        sumR += rgbBuffer[idx];
+        sumG += rgbBuffer[idx + 1];
+        sumB += rgbBuffer[idx + 2];
+        count++;
+      }
+    }
+  }
+
+  if (count === 0) return 'unknown';
+
+  return classifyColor(sumR / count, sumG / count, sumB / count);
+}
+
+function classifyColor(r: number, g: number, b: number): string {
+  const [h, s] = convert.rgb.hsv([r, g, b]);
+
+  if (s < 10) return 'neutral';
+
+  if (h >= 325 || h < 20) return 'red';
+  if (h >= 20 && h < 50) return 'orange';
+  if (h >= 75 && h < 160) return 'green';
+  if (h >= 170 && h < 255) return 'blue';
+  if (h >= 255 && h < 325) return 'purple';
+
+  return 'unknown';
 }
 
 function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string): void {
@@ -170,12 +278,12 @@ function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string): void {
   }
 
   const statHeaders = statsList.join(',');
-  const header = `Rank,Name,Score,${statHeaders}\n`;
+  const header = `Side,Rank,Name,Score,${statHeaders}\n`;
 
   const csvContent = rows
     .map((r) => {
       const statsFields = r.stats.map((s) => `"${s}"`).join(',');
-      return `"${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
+      return `"${r.side}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
     })
     .join('\n');
 
