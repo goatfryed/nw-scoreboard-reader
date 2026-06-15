@@ -7,3 +7,4 @@ dist/
 .tmp/
 .vscode/*
 .env.local
+credentials.json

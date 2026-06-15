@@ -6,6 +6,7 @@ import { downloadClip } from './twitch';
 import { extractFrames } from './ffmpeg';
 import { cropAndStitchFrames } from './stitch';
 import { extractScoreboardToCsv } from './ocr';
+import { uploadCsvToGoogleSheets } from './sheets';
 
 function getScreenArg(): string {
   for (let i = 0; i < process.argv.length; i++) {
@@ -30,10 +31,14 @@ const program = new Command();
 program
   .name('nw-scoreboard-reader')
   .description('CLI tool to extract scoreboard data from Twitch clips')
-  .version('1.0.0')
+  .version('1.0.0');
+
+program
+  .command('read', { isDefault: true })
+  .description('Download clip, stitch frames, and extract CSV (default)')
   .argument('<clip-url>', 'Twitch clip URL (e.g. https://clips.twitch.tv/...)')
   .option('-o, --output <path>', 'Stitched image output path', '.tmp/stitched.png')
-  .option('--csv <path>', 'Output CSV file path', '.tmp/scoreboard.csv')
+  .option('--csv <path>', 'Output CSV file path', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
   .option('--screen <name>', 'Screen settings to load from .env.$SCREEN', '1920x1080')
@@ -41,8 +46,8 @@ program
     try {
       process.env.GAME_TYPE = options.gameType;
       
-      console.log("NW Scoreboard Reader CLI");
-      console.log("------------------------");
+      console.log("NW Scoreboard Reader CLI - Extraction");
+      console.log("-------------------------------------");
       console.log(`Clip URL:  ${clipUrl}`);
       console.log(`Output:    ${options.output}`);
       console.log(`CSV:       ${options.csv}`);
@@ -89,8 +94,20 @@ program
     }
   });
 
+program
+  .command('upload')
+  .description('Upload scoreboard CSV data to Google Sheets')
+  .option('--csv <path>', 'CSV file path to upload', process.env.CSV_PATH || '.tmp/scoreboard.csv')
+  .action(async (options: { csv: string }) => {
+    try {
+      console.log("NW Scoreboard Reader CLI - Google Sheets Upload");
+      console.log("-----------------------------------------------");
+      console.log(`CSV Path: ${options.csv}`);
+      await uploadCsvToGoogleSheets(options.csv);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      process.exit(1);
+    }
+  });
+
 program.parse(process.argv);
-
-
-
-
