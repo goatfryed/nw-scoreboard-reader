@@ -7,7 +7,23 @@ import { extractFrames } from './ffmpeg';
 import { cropAndStitchFrames } from './stitch';
 import { extractScoreboardToCsv } from './ocr';
 
-dotenv.config();
+function getScreenArg(): string {
+  for (let i = 0; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg === '--screen' && i + 1 < process.argv.length) {
+      return process.argv[i + 1];
+    }
+    if (arg.startsWith('--screen=')) {
+      return arg.substring(9);
+    }
+  }
+  return '1920x1080';
+}
+
+const screen = getScreenArg();
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: `.env.${screen}` });
+dotenv.config({ path: '.env' });
 
 const program = new Command();
 
@@ -20,7 +36,8 @@ program
   .option('--csv <path>', 'Output CSV file path', '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
-  .action(async (clipUrl: string, options: { output: string; csv: string; fps: string; gameType: string }) => {
+  .option('--screen <name>', 'Screen settings to load from .env.$SCREEN', '1920x1080')
+  .action(async (clipUrl: string, options: { output: string; csv: string; fps: string; gameType: string; screen: string }) => {
     try {
       process.env.GAME_TYPE = options.gameType;
       
@@ -31,6 +48,7 @@ program
       console.log(`CSV:       ${options.csv}`);
       console.log(`FPS:       ${options.fps}`);
       console.log(`Game Type: ${options.gameType}`);
+      console.log(`Screen:    ${options.screen}`);
 
       const tempDir = path.join(process.cwd(), '.tmp');
       

@@ -1,9 +1,9 @@
 node_modules/
 dist/
-.env
 *.png
 *.mp4
 *.log
 .DS_Store
 .tmp/
 .vscode/*
+.env.local
