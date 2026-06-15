@@ -11,7 +11,7 @@ A CLI tool to download Twitch clips, extract scrolling scoreboard frames, vertic
   - Scales and binarizes text using custom threshold settings.
   - Erases player icon columns in-memory to prevent OCR character recognition noise.
   - Cleans up trailing tilde characters (`~`) and common OCR spelling issues automatically.
-- **Cascading Configurations**: Dynamically prioritizes `.env.local` -> `.env.$SCREEN` (streamer-specific resolution profiles) -> global `.env` configuration.
+- **Cascading Configurations**: Dynamically prioritizes `.env.local` -> `.env.$MODE` (streamer-specific resolution profiles) -> global `.env` configuration.
 
 ## Getting Started
 
@@ -30,7 +30,7 @@ A CLI tool to download Twitch clips, extract scrolling scoreboard frames, vertic
 
 ### Configuration
 
-Create a `.env` file (or a resolution-specific config like `.env.1920x1080`) specifying crop coordinates, frame rates, and masking parameters:
+Create a `.env` file (or a resolution-specific config like `.env.opr1920`) specifying crop coordinates, frame rates, and masking parameters:
 
 ```env
 # Twitch API credentials
@@ -52,8 +52,8 @@ GAME_TYPE=opr
 ERASE_LEFT=800
 ERASE_RIGHT=845
 
-# OCR Thresholding configuration
-OCR_THRESHOLD=160
+# Google Sheets Append option
+GOOGLE_SHEETS_APPEND=false
 ```
 
 ### Usage
@@ -65,7 +65,9 @@ pnpm start https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP
 ```
 
 Options:
-- `--screen <name>`: Load resolution-specific environment file `.env.<name>` (defaults to `1920x1080`).
+- `-m, --mode <name>`: Load resolution-specific environment file `.env.<name>` (defaults to `opr1920`).
+- `--append`: Append rows to Google Sheet instead of replacing (can also set `GOOGLE_SHEETS_APPEND=true` in environment).
 - `--game-type <opr|war>`: Format target columns dynamically.
 - `--output <path>`: Custom path to save the stitched image.
 - `--csv <path>`: Custom path to save the extracted scoreboard.
+

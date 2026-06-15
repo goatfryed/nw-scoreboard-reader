@@ -1,66 +1,99 @@
-import * as fs from 'fs';
 import { google } from 'googleapis';
 
-export async function uploadCsvToGoogleSheets(csvPath: string): Promise<void> {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  const range = process.env.GOOGLE_SHEETS_RANGE || 'Sheet1!A2:H';
-
-  if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEETS_SPREADSHEET_ID is not defined in the environment.');
-  }
-
-  if (!fs.existsSync(csvPath)) {
-    throw new Error(`CSV file not found at: ${csvPath}`);
-  }
-
-  const csvContent = fs.readFileSync(csvPath, 'utf-8');
-  const lines = csvContent.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (lines.length <= 1) {
-    console.log('CSV is empty or only contains headers. Skipping upload.');
-    return;
-  }
-
-  const rows = lines.slice(1).map((line) => {
-    const parts: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        parts.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    parts.push(current);
-    return parts;
+export function getGoogleAuth(scopes: string[]) {
+  return new google.auth.GoogleAuth({
+    scopes,
   });
+}
 
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-
+/**
+ * Clears and uploads raw grid rows to a Google Sheet range.
+ */
+export async function uploadRowsToGoogleSheets(
+  spreadsheetId: string,
+  range: string,
+  rows: string[][],
+  append: boolean = false
+): Promise<void> {
+  const auth = getGoogleAuth(['https://www.googleapis.com/auth/spreadsheets']);
   const sheets = google.sheets({ version: 'v4', auth });
 
-  console.log(`Clearing existing data in range: ${range}...`);
-  await sheets.spreadsheets.values.clear({
+  if (append) {
+    console.log(`Appending ${rows.length} rows to Google Sheets...`);
+    const targetStartCell = range.split(':')[0];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: targetStartCell,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: rows,
+      },
+    });
+  } else {
+    console.log(`Clearing existing data in range: ${range}...`);
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range,
+    });
+
+    console.log(`Uploading ${rows.length} rows to Google Sheets...`);
+    const targetStartCell = range.split(':')[0];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: targetStartCell,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: rows,
+      },
+    });
+  }
+}
+
+/**
+ * Resolves the GID (sheetId) of a tab by its name.
+ */
+export async function getSheetGidByName(
+  spreadsheetId: string,
+  sheetName: string
+): Promise<string> {
+  const auth = getGoogleAuth(['https://www.googleapis.com/auth/spreadsheets.readonly']);
+  const sheets = google.sheets({ version: 'v4', auth });
+  const response = await sheets.spreadsheets.get({
     spreadsheetId,
-    range,
+  });
+  const cleanName = sheetName.replace(/['"]/g, '').trim().toLowerCase();
+  const sheet = response.data.sheets?.find(
+    (s) => s.properties?.title?.trim().toLowerCase() === cleanName
+  );
+  if (!sheet || sheet.properties?.sheetId === undefined) {
+    throw new Error(`Sheet with name "${sheetName}" not found in spreadsheet.`);
+  }
+  return String(sheet.properties.sheetId);
+}
+
+/**
+ * Downloads a spreadsheet range as a PDF export using service account credentials.
+ */
+export async function exportSheetAsPdf(
+  spreadsheetId: string,
+  gid: string,
+  range: string
+): Promise<Buffer> {
+  const auth = getGoogleAuth([
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/spreadsheets.readonly',
+  ]);
+  const client = await auth.getClient();
+
+  // Export parameters optimized for clear landscape scoreboard screenshotting
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=pdf&gid=${gid}&range=${range}&size=letter&portrait=false&fitw=true&gridlines=true&printtitle=false&sheetnames=false`;
+  console.log(`Requesting PDF export from: ${url}`);
+  
+  const response = await client.request<ArrayBuffer>({
+    url,
+    responseType: 'arraybuffer',
   });
 
-  console.log(`Uploading ${rows.length} rows to Google Sheets...`);
-  const targetStartCell = range.split(':')[0];
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: targetStartCell,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: rows,
-    },
-  });
-
-  console.log('Google Sheet updated successfully!');
+  return Buffer.from(response.data);
 }

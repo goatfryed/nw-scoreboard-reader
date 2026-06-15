@@ -6,24 +6,26 @@ import { downloadClip } from './twitch';
 import { extractFrames } from './ffmpeg';
 import { cropAndStitchFrames } from './stitch';
 import { extractScoreboardToCsv } from './ocr';
-import { uploadCsvToGoogleSheets } from './sheets';
+import { uploadCsvToGoogleSheets } from './upload';
+import { captureSpreadsheetScreenshot } from './screenshot';
 
-function getScreenArg(): string {
+
+function getModeArg(): string {
   for (let i = 0; i < process.argv.length; i++) {
     const arg = process.argv[i];
-    if (arg === '--screen' && i + 1 < process.argv.length) {
+    if ((arg === '--mode' || arg === '-m') && i + 1 < process.argv.length) {
       return process.argv[i + 1];
     }
-    if (arg.startsWith('--screen=')) {
-      return arg.substring(9);
+    if (arg.startsWith('--mode=')) {
+      return arg.substring(7);
     }
   }
-  return '1920x1080';
+  return 'opr1920';
 }
 
-const screen = getScreenArg();
+const mode = getModeArg();
 dotenv.config({ path: '.env.local' });
-dotenv.config({ path: `.env.${screen}` });
+dotenv.config({ path: `.env.${mode}` });
 dotenv.config({ path: '.env' });
 
 const program = new Command();
@@ -33,14 +35,17 @@ program
   .description('CLI tool to extract scoreboard data from Twitch clips')
   .version('1.0.0');
 
-// Root command (runs the entire pipeline)
 program
   .argument('<clip-url>', 'Twitch clip URL to process in a single piped run')
-  .action(async (clipUrl: string) => {
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .option('--append', 'Append rows to Google Sheet instead of replacing')
+  .action(async (clipUrl: string, options: { mode: string; append: boolean }) => {
     try {
       console.log("NW Scoreboard Reader CLI - Full Pipeline");
       console.log("---------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
+      console.log(`Mode:     ${options.mode}`);
+      console.log(`Append:   ${options.append}`);
 
       const defaultVideoPath = '.tmp/clip.mp4';
       const defaultStitchedPath = '.tmp/stitched.png';
@@ -84,7 +89,7 @@ program
       await extractScoreboardToCsv(defaultStitchedPath, defaultCsvPath);
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
-      await uploadCsvToGoogleSheets(defaultCsvPath);
+      await uploadCsvToGoogleSheets(defaultCsvPath, options.append);
 
       console.log("\nPipeline execution complete!");
     } catch (err) {
@@ -99,7 +104,8 @@ program
   .description('Download Twitch clip by URL')
   .argument('<clip-url>', 'Twitch clip URL (e.g. https://clips.twitch.tv/...)')
   .option('-o, --output <path>', 'Output video path', '.tmp/clip.mp4')
-  .action(async (clipUrl: string, options: { output: string }) => {
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .action(async (clipUrl: string, options: { output: string; mode: string }) => {
     try {
       console.log("NW Scoreboard Reader CLI - Clip Download");
       console.log("----------------------------------------");
@@ -136,8 +142,8 @@ program
   .option('--csv <path>', 'Output CSV file path', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
-  .option('--screen <name>', 'Screen settings to load from .env.$SCREEN', '1920x1080')
-  .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; screen: string }) => {
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string }) => {
     try {
       process.env.GAME_TYPE = options.gameType;
 
@@ -148,7 +154,7 @@ program
       console.log(`CSV Output:   ${options.csv}`);
       console.log(`FPS:          ${options.fps}`);
       console.log(`Game Type:    ${options.gameType}`);
-      console.log(`Screen:       ${options.screen}`);
+      console.log(`Mode:         ${options.mode}`);
 
       if (!fs.existsSync(options.input)) {
         throw new Error(`Input video file not found at: ${options.input}`);
@@ -181,16 +187,38 @@ program
   .command('upload')
   .description('Upload scoreboard CSV data to Google Sheets')
   .option('--csv <path>', 'CSV file path to upload', process.env.CSV_PATH || '.tmp/scoreboard.csv')
-  .action(async (options: { csv: string }) => {
+  .option('--append', 'Append rows to Google Sheet instead of replacing')
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .action(async (options: { csv: string; append: boolean; mode: string }) => {
     try {
       console.log("NW Scoreboard Reader CLI - Google Sheets Upload");
       console.log("-----------------------------------------------");
       console.log(`CSV Path: ${options.csv}`);
-      await uploadCsvToGoogleSheets(options.csv);
+      console.log(`Append:   ${options.append}`);
+      await uploadCsvToGoogleSheets(options.csv, options.append);
     } catch (err) {
       console.error("Upload failed:", err);
       process.exit(1);
     }
   });
 
+// Subcommand: screenshot
+program
+  .command('screenshot')
+  .description('Take a screenshot of a specific Google Sheets region')
+  .option('-o, --output <path>', 'Output screenshot path', '.tmp/spreadsheet.png')
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .action(async (options: { output: string; mode: string }) => {
+    try {
+      console.log("NW Scoreboard Reader CLI - Spreadsheet Screenshot");
+      console.log("-----------------------------------------------");
+      console.log(`Output Path: ${options.output}`);
+      await captureSpreadsheetScreenshot(options.output);
+    } catch (err) {
+      console.error("Screenshot failed:", err);
+      process.exit(1);
+    }
+  });
+
 program.parse(process.argv);
+

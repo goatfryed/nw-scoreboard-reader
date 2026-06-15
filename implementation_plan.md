@@ -1,55 +1,56 @@
 # Implementation Plan - Scoreboard Reader
 
-This plan outlines the design and implementation steps for building the remaining phases of the scoreboard reader tool, focusing on the CLI command refactoring.
+This plan outlines the design and implementation steps for building the new `screenshot` command to capture a specific region of a Google Sheet using your existing Google Service Account.
+
+## Proposed Design (Service Account + Local Render)
+
+To avoid Google Account browser login walls and CAPTCHAs, we will use your service account credentials:
+1. **Fetch Access Token**: Use the Google Auth library (reusing `credentials.json`) to obtain an OAuth2 access token.
+2. **Export Sheet as HTML**: Fetch the specific sheet region (`A1:Q83`) using Google's export endpoint:
+   `https://docs.google.com/spreadsheets/d/<spreadsheet-id>/export?format=html&gid=<gid>&range=A1:Q83`
+   passing the access token in the Authorization header.
+3. **Local Playwright Render**: Save the HTML to a temporary file, load it in Playwright via `file://` protocol, and capture a full-page screenshot of the grid table.
 
 ## Proposed Changes
 
-### CLI Integration
+### CLI & Configuration
 
-We will reorganize the CLI commands in [src/index.ts](file:///home/goatfryed/com.github/goatfryed/nw-scoreboard-reader/src/index.ts):
+#### [MODIFY] [.env](file:///home/goatfryed/com.github/goatfryed/nw-scoreboard-reader/.env)
+Add configuration variables for the screenshot command:
+```env
+GOOGLE_SHEETS_SCREENSHOT_GID=0
+GOOGLE_SHEETS_SCREENSHOT_RANGE=A1:Q83
+```
 
-1. **Root-Level Default Command**:
-   - Usage: `pnpm start <clip-url>` (or `npx ts-node src/index.ts <clip-url>`)
-   - If a URL is passed directly without any subcommand, execute the full pipeline:
-     - Download the clip to `.tmp/clip.mp4`.
-     - Parse the downloaded video to `.tmp/scoreboard.csv` (using default options).
-     - Upload the resulting CSV to Google Sheets.
+#### [MODIFY] [src/index.ts](file:///home/goatfryed/com.github/goatfryed/nw-scoreboard-reader/src/index.ts)
+Add the `screenshot` subcommand to commander:
+- Usage: `pnpm start screenshot`
+- Options:
+  - `-o, --output <path>`: Destination path for the screenshot (default: `.tmp/spreadsheet.png`).
+  - `--screen <name>`: Screen config.
 
-2. **Subcommands**:
-   - **`clip <clip-url>`**:
-     - Downloads the Twitch clip.
-     - Option `-o, --output <path>`: Destination path (default: `.tmp/clip.mp4`).
-   - **`parse`**:
-     - Extracts frames, stitches them, and performs OCR/CSV extraction.
-     - Option `-i, --input <path>`: Path to the downloaded video (default: `.tmp/clip.mp4`).
-     - Option `-o, --output <path>`: Path to the stitched image output (default: `.tmp/stitched.png`).
-     - Option `--csv <path>`: CSV file path output (default: `.tmp/scoreboard.csv` or `CSV_PATH`).
-     - Option `--fps <number>`, `--game-type <type>`, `--screen <name>`.
-   - **`upload`**:
-     - Uploads CSV data to Google Sheets.
-     - Option `--csv <path>`: Path to the CSV file to upload (default: `.tmp/scoreboard.csv` or `CSV_PATH`).
+### Screenshot Logic
 
----
-
-### Phase 5: Dashboard Screenshotting
-1. Launch Playwright headless browser.
-2. Navigate to the dashboard, wait for it to load, and capture a screenshot.
-3. Upload the dashboard screenshot and the stitched scoreboard image to Google Drive.
+#### [NEW] [src/screenshot.ts](file:///home/goatfryed/com.github/goatfryed/nw-scoreboard-reader/src/screenshot.ts)
+Implement the fetch and screenshot logic:
+- Export function `captureSpreadsheetScreenshot(outputPath: string): Promise<void>`:
+  1. Retrieve Google Auth client from `google.auth.GoogleAuth`.
+  2. Call `client.getAccessToken()` to get a token.
+  3. Fetch the HTML export endpoint using the token.
+  4. Write the HTML response to `.tmp/sheet.html`.
+  5. Launch Playwright headlessly, navigate to the local file, set viewport size, and capture the screenshot.
 
 ---
 
 ## Verification Plan
 
 ### Manual Verification
-1. Run the full pipeline via root command:
+1. Run the screenshot command:
    ```bash
-   pnpm start "https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2"
+   pnpm start screenshot
    ```
-   Verify that it downloads, parses, and uploads to Google Sheets.
-2. Run individual commands:
-   ```bash
-   pnpm start clip "https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2"
-   pnpm start parse
-   GOOGLE_APPLICATION_CREDENTIALS=./credentials.json pnpm start upload
-   ```
-   Verify that each step operates correctly using its default parameters.
+2. Verify that:
+   - A screenshot is successfully created at `.tmp/spreadsheet.png`.
+   - The screenshot shows the range `A1:Q83` rendered beautifully.
+
+
