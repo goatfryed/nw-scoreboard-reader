@@ -4,6 +4,8 @@ import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import convert from 'color-convert';
 import { configManager, ReaderOptions } from './config';
+import { extractFrames } from './ffmpeg';
+import { cropAndStitchFrames } from './stitch';
 
 export { ReaderOptions };
 
@@ -32,6 +34,74 @@ export interface VictoryInfo {
 interface OcrLine {
   text: string;
   yCenter: number;
+}
+
+/**
+ * Filters frames to select only those containing "all", "allies", or "enemies" in the header box.
+ */
+export async function filterScoreboardFrames(frames: string[]): Promise<string[]> {
+  const config = configManager.getConfig();
+  const headerBox = config.headerBox;
+  if (!headerBox || !headerBox.left || !headerBox.right || !headerBox.top || !headerBox.bottom) {
+    console.log('No headerBox configured. Skipping frame filtering.');
+    return frames;
+  }
+
+  console.log('Filtering frames to select scoreboard views...');
+  const hbWidth = headerBox.right - headerBox.left;
+  const hbHeight = headerBox.bottom - headerBox.top;
+
+  if (hbWidth <= 0 || hbHeight <= 0) {
+    return frames;
+  }
+
+  const worker = await createWorker('eng');
+  const validFrames: string[] = [];
+
+  for (const framePath of frames) {
+    try {
+      const croppedBuffer = await sharp(framePath)
+        .extract({
+          left: headerBox.left,
+          top: headerBox.top,
+          width: hbWidth,
+          height: hbHeight
+        })
+        .resize({ width: hbWidth * 2, kernel: 'cubic' })
+        .grayscale()
+        .negate({ alpha: false })
+        .threshold(160)
+        .withMetadata({ density: 300 })
+        .png()
+        .toBuffer();
+
+      const tempDir = path.dirname(framePath);
+      const tempPath = path.join(tempDir, `hb_temp_${path.basename(framePath)}`);
+      await fs.promises.writeFile(tempPath, croppedBuffer);
+
+      const { data } = await worker.recognize(tempPath);
+
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (e) {}
+
+      const text = data.text.toLowerCase();
+      const isMatch = text.includes('all') || text.includes('allies') || text.includes('enemies') ||
+                      text.includes('alli') || text.includes('enem');
+
+      if (isMatch) {
+        validFrames.push(framePath);
+      } else {
+        console.log(`  Frame ${path.basename(framePath)} discarded (header OCR: "${text.trim()}")`);
+      }
+    } catch (err) {
+      console.error(`Error filtering frame ${framePath}:`, err);
+    }
+  }
+
+  await worker.terminate();
+  console.log(`Kept ${validFrames.length} of ${frames.length} frames.`);
+  return validFrames;
 }
 
 /**
@@ -436,4 +506,50 @@ function formatDateTime(date: Date): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+/**
+ * Orchestrates the full scoreboard extraction flow:
+ * frame extraction, filtering, victory info parsing, stitching, row parsing, and CSV writing.
+ */
+export async function runScoreboardParsing(
+  videoPath: string,
+  stitchedPath: string,
+  csvPath: string,
+  fps: number,
+  startTime: Date = new Date()
+): Promise<void> {
+  const tempDir = path.join(process.cwd(), '.tmp');
+  const framesDir = path.join(tempDir, 'frames');
+  if (fs.existsSync(framesDir)) {
+    fs.rmSync(framesDir, { recursive: true, force: true });
+  }
+
+  let frames = await extractFrames(videoPath, framesDir, fps);
+  console.log(`Extracted ${frames.length} frames.`);
+
+  if (frames.length === 0) {
+    throw new Error("No frames extracted from the video.");
+  }
+
+  frames = await filterScoreboardFrames(frames);
+
+  if (frames.length === 0) {
+    throw new Error("No scoreboard frames found in the video after filtering.");
+  }
+
+  console.log(`Analyzing victory side...`);
+  const victoryInfoPromise = parseVictoryInfo(frames[0]);
+
+  console.log(`Stitching frames into ${stitchedPath}...`);
+  await cropAndStitchFrames(frames, stitchedPath);
+
+  const victoryInfo = await victoryInfoPromise;
+  console.log(`Victory Info resolved - Box Color: ${victoryInfo.victoryBoxColor}, Outcome: ${victoryInfo.isVictory ? 'Victory' : 'Defeat'}`);
+
+  const rows = await extractScoreboardRows(stitchedPath);
+  const decorated = decorateScoreboardRows(rows, victoryInfo, startTime);
+
+  console.log(`Writing structured data to CSV: ${csvPath}`);
+  writeToCsv(decorated, csvPath);
 }

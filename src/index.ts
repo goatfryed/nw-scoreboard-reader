@@ -3,15 +3,7 @@ import * as fs from 'fs';
 import * as dotenv from 'dotenv';
 import { Command } from 'commander';
 import { downloadClip } from './twitch';
-import { extractFrames } from './ffmpeg';
-import { cropAndStitchFrames } from './stitch';
-import {
-  parseVictoryInfo,
-  extractScoreboardRows,
-  decorateScoreboardRows,
-  writeToCsv,
-  type VictoryInfo
-} from './scoreparser';
+import { runScoreboardParsing } from './scoreparser';
 import { uploadCsvToGoogleSheets, captureSpreadsheetScreenshot } from './sheets';
 import { configManager } from './config';
 
@@ -96,27 +88,8 @@ program
         fs.rmSync(framesDir, { recursive: true, force: true });
       }
 
-      const frames = await extractFrames(defaultVideoPath, framesDir, parseInt(defaultFps, 10));
-      console.log(`Extracted ${frames.length} frames.`);
-
-      if (frames.length === 0) {
-        throw new Error("No frames extracted from the video.");
-      }
-
-      console.log(`Analyzing victory side...`);
-      const victoryInfoPromise = parseVictoryInfo(frames[0]);
-
-      console.log(`Stitching frames into ${defaultStitchedPath}...`);
-      await cropAndStitchFrames(frames, defaultStitchedPath);
-
-      const victoryInfo = await victoryInfoPromise;
-      console.log(`Victory Info resolved - Box Color: ${victoryInfo.victoryBoxColor}, Outcome: ${victoryInfo.isVictory ? 'Victory' : 'Defeat'}`);
-
-      const rows = await extractScoreboardRows(defaultStitchedPath);
-      const decorated = decorateScoreboardRows(rows, victoryInfo, startTime);
-
-      console.log(`Writing structured data to CSV: ${defaultCsvPath}`);
-      writeToCsv(decorated, defaultCsvPath);
+      console.log(`\n[2/3] Extracting, stitching, and parsing scoreboard frames...`);
+      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10), startTime);
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
       await uploadCsvToGoogleSheets(defaultCsvPath, configManager.getConfig());
@@ -201,27 +174,7 @@ program
         fs.rmSync(framesDir, { recursive: true, force: true });
       }
 
-      const frames = await extractFrames(options.input, framesDir, parseInt(options.fps, 10));
-      console.log(`Extracted ${frames.length} frames.`);
-
-      if (frames.length === 0) {
-        throw new Error("No frames extracted from the video.");
-      }
-
-      console.log(`Analyzing victory side...`);
-      const victoryInfoPromise = parseVictoryInfo(frames[0]);
-
-      console.log(`Stitching frames into ${options.output}...`);
-      await cropAndStitchFrames(frames, options.output);
-
-      const victoryInfo = await victoryInfoPromise;
-      console.log(`Victory Info resolved - Box Color: ${victoryInfo.victoryBoxColor}, Outcome: ${victoryInfo.isVictory ? 'Victory' : 'Defeat'}`);
-
-      const rows = await extractScoreboardRows(options.output);
-      const decorated = decorateScoreboardRows(rows, victoryInfo, startTime);
-
-      console.log(`Writing structured data to CSV: ${options.csv}`);
-      writeToCsv(decorated, options.csv);
+      await runScoreboardParsing(options.input, options.output, options.csv, parseInt(options.fps, 10), startTime);
       console.log("OCR and CSV extraction completed!");
     } catch (err) {
       console.error("Parsing failed:", err);

@@ -12,7 +12,12 @@
     "right": 445,
     "bottom": 425
   },
-  "headerBox": {},
+  "headerBox": {
+    "top": 165,
+    "left": 810,
+    "right": 1460,
+    "bottom": 190
+  },
   "erase": {
     "left": 800,
     "right": 845

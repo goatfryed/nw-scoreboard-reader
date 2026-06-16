@@ -17,6 +17,7 @@ export interface ReaderOptions {
   type: 'opr' | 'war';
   scoreBox: ScoreBox;
   victoryBox: ScoreBox;
+  headerBox?: ScoreBox;
   erase: EraseConfig;
   threshold?: number;
 }
@@ -59,6 +60,12 @@ class ConfigManager {
         right: parseInt(process.env.VICTORY_RIGHT || '445', 10),
         bottom: parseInt(process.env.VICTORY_BOTTOM || '425', 10),
       },
+      headerBox: {
+        left: parseInt(process.env.HEADER_LEFT || '810', 10),
+        top: parseInt(process.env.HEADER_TOP || '165', 10),
+        right: parseInt(process.env.HEADER_RIGHT || '1460', 10),
+        bottom: parseInt(process.env.HEADER_BOTTOM || '190', 10),
+      },
       erase: {
         left: parseInt(process.env.ERASE_LEFT || '0', 10),
         right: parseInt(process.env.ERASE_RIGHT || '0', 10),
@@ -95,6 +102,12 @@ class ConfigManager {
             right: jsonConfig.victoryBox?.right ?? defaults.victoryBox.right,
             bottom: jsonConfig.victoryBox?.bottom ?? defaults.victoryBox.bottom,
           },
+          headerBox: jsonConfig.headerBox ? {
+            left: jsonConfig.headerBox.left ?? defaults.headerBox?.left ?? 0,
+            top: jsonConfig.headerBox.top ?? defaults.headerBox?.top ?? 0,
+            right: jsonConfig.headerBox.right ?? defaults.headerBox?.right ?? 0,
+            bottom: jsonConfig.headerBox.bottom ?? defaults.headerBox?.bottom ?? 0,
+          } : defaults.headerBox,
           erase: {
             left: jsonConfig.erase?.left ?? defaults.erase.left,
             right: jsonConfig.erase?.right ?? defaults.erase.right,
@@ -134,6 +147,7 @@ class ConfigManager {
       ...overrides,
       scoreBox: overrides.scoreBox ? { ...config.scoreBox, ...overrides.scoreBox } : config.scoreBox,
       victoryBox: overrides.victoryBox ? { ...config.victoryBox, ...overrides.victoryBox } : config.victoryBox,
+      headerBox: overrides.headerBox ? { ...config.headerBox, ...overrides.headerBox } : config.headerBox,
       erase: overrides.erase ? { ...config.erase, ...overrides.erase } : config.erase,
       upload: overrides.upload ? { ...config.upload, ...overrides.upload } : config.upload,
     };
