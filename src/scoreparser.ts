@@ -11,8 +11,7 @@ const OprRawStats = ["kda", "damage", "healing", "blocked", "resources"];
 const OprCsvHeaders = ["kills", "deaths", "assists", "damage", "healing", "blocked", "resources"];
 const WarStats = ["kills", "deaths", "assists", "damage", "healing"];
 
-
-interface ScoreboardRow {
+export interface ScoreboardRow {
   side: string;
   rank: string;
   name: string;
@@ -20,16 +19,109 @@ interface ScoreboardRow {
   stats: string[];
 }
 
+export interface DecoratedRow extends ScoreboardRow {
+  date: string;
+  win: boolean;
+}
+
+export interface VictoryInfo {
+  victoryBoxColor: string;
+  isVictory: boolean;
+}
+
 interface OcrLine {
   text: string;
   yCenter: number;
 }
 
-export async function extractScoreboardToCsv(
-  imagePath: string,
-  csvOutputPath: string,
-  startTime: Date = new Date()
-): Promise<void> {
+/**
+ * Reads the victory box from the initial frame and resolves the winning side color.
+ */
+export async function parseVictoryInfo(firstFramePath: string): Promise<VictoryInfo> {
+  if (!fs.existsSync(firstFramePath)) {
+    return { victoryBoxColor: 'unknown', isVictory: true };
+  }
+
+  try {
+    console.log(`Analyzing victory box from first frame: ${firstFramePath}...`);
+    const victoryBox = configManager.getConfig().victoryBox;
+    const vbWidth = victoryBox.right - victoryBox.left;
+    const vbHeight = victoryBox.bottom - victoryBox.top;
+    const vbTopHalfHeight = Math.floor(vbHeight / 2);
+
+    const { data: firstFrameRgb, info: firstFrameInfo } = await sharp(firstFramePath)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // Sample team color from top half
+    let sumR = 0, sumG = 0, sumB = 0, count = 0;
+    for (let y = victoryBox.top; y < victoryBox.top + vbTopHalfHeight; y++) {
+      for (let x = victoryBox.left; x < victoryBox.right; x++) {
+        if (y >= 0 && y < firstFrameInfo.height && x >= 0 && x < firstFrameInfo.width) {
+          const idx = (y * firstFrameInfo.width + x) * firstFrameInfo.channels;
+          sumR += firstFrameRgb[idx];
+          sumG += firstFrameRgb[idx + 1];
+          sumB += firstFrameRgb[idx + 2];
+          count++;
+        }
+      }
+    }
+
+    let victoryBoxColor = 'unknown';
+    if (count > 0) {
+      victoryBoxColor = classifyColor(sumR / count, sumG / count, sumB / count);
+    }
+    console.log(`Detected Victory Box Team Color: ${victoryBoxColor}`);
+
+    if (victoryBoxColor === 'unknown') {
+      return { victoryBoxColor: 'unknown', isVictory: true };
+    }
+
+    // OCR Victory Box
+    const vbCroppedBuffer = await sharp(firstFramePath)
+      .extract({
+        left: victoryBox.left,
+        top: victoryBox.top,
+        width: vbWidth,
+        height: vbHeight
+      })
+      .resize({ width: vbWidth * 2, kernel: 'cubic' })
+      .grayscale()
+      .negate({ alpha: false })
+      .threshold(160)
+      .withMetadata({ density: 300 })
+      .png()
+      .toBuffer();
+
+    const tempDir = path.dirname(firstFramePath);
+    const vbTempPath = path.join(tempDir, `victory_box_preprocessed_${Date.now()}.png`);
+    await fs.promises.writeFile(vbTempPath, vbCroppedBuffer);
+
+    const worker = await createWorker('eng');
+    const { data: vbData } = await worker.recognize(vbTempPath);
+    await worker.terminate();
+
+    try {
+      fs.unlinkSync(vbTempPath);
+    } catch (e) {}
+
+    const vbText = vbData.text.toLowerCase();
+    console.log(`Victory Box OCR text: "${vbText.trim()}"`);
+
+    const isVictory = !vbText.includes('defeat') && !vbText.includes('def') && !vbText.includes('eat');
+    console.log(`Victory Box label resolved as: ${isVictory ? 'Victory' : 'Defeat'}`);
+
+    return { victoryBoxColor, isVictory };
+  } catch (err) {
+    console.error('Error extracting victory side:', err);
+    return { victoryBoxColor: 'unknown', isVictory: true };
+  }
+}
+
+/**
+ * Core parsing logic to extract rows from cropped and stitched image without decoration.
+ */
+export async function extractScoreboardRows(imagePath: string): Promise<ScoreboardRow[]> {
   const preprocessedPath = await preprocessImageForOCR(imagePath);
 
   console.log(`Running OCR on preprocessed image...`);
@@ -70,9 +162,61 @@ export async function extractScoreboardToCsv(
     rgbInfo.channels
   );
 
-  console.log(`Writing structured data to CSV: ${csvOutputPath}`);
-  writeToCsv(rows, csvOutputPath, startTime);
-  console.log('CSV export complete!');
+  return rows;
+}
+
+/**
+ * Decorates rows with date and win column.
+ */
+export function decorateScoreboardRows(
+  rows: ScoreboardRow[],
+  victoryInfo: VictoryInfo,
+  startTime: Date
+): DecoratedRow[] {
+  const dateStr = formatDateTime(startTime);
+  const { victoryBoxColor, isVictory } = victoryInfo;
+
+  return rows.map((r) => {
+    let win = false;
+    if (victoryBoxColor !== 'unknown') {
+      if (r.side === victoryBoxColor) {
+        win = isVictory;
+      } else if (r.side !== 'unknown' && r.side !== 'neutral') {
+        win = !isVictory;
+      }
+    }
+    return {
+      ...r,
+      date: dateStr,
+      win,
+    };
+  });
+}
+
+/**
+ * Writes decorated rows to CSV.
+ */
+export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
+  const gameType = configManager.getConfig().type || 'opr';
+  const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
+
+  const outDir = path.dirname(csvOutputPath);
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+
+  const statHeaders = statsList.join(',');
+  const header = `Date,Side,Win,Rank,Name,Score,${statHeaders}\n`;
+
+  const csvContent = rows
+    .map((r) => {
+      const statsFields = r.stats.map((s) => `"${s}"`).join(',');
+      const winStr = r.win ? 'TRUE' : 'FALSE';
+      return `"${r.date}","${r.side}","${winStr}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
+    })
+    .join('\n');
+
+  fs.writeFileSync(csvOutputPath, header + csvContent, 'utf-8');
 }
 
 async function preprocessImageForOCR(imagePath: string): Promise<string> {
@@ -292,27 +436,4 @@ function formatDateTime(date: Date): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${day}/${month}/${year} ${hours}:${minutes}`;
-}
-
-function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string, startTime: Date): void {
-  const gameType = configManager.getConfig().type || 'opr';
-  const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
-
-  const outDir = path.dirname(csvOutputPath);
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  }
-
-  const dateStr = formatDateTime(startTime);
-  const statHeaders = statsList.join(',');
-  const header = `Date,Side,Rank,Name,Score,${statHeaders}\n`;
-
-  const csvContent = rows
-    .map((r) => {
-      const statsFields = r.stats.map((s) => `"${s}"`).join(',');
-      return `"${dateStr}","${r.side}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
-    })
-    .join('\n');
-
-  fs.writeFileSync(csvOutputPath, header + csvContent, 'utf-8');
 }

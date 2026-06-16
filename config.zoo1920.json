@@ -6,6 +6,13 @@
     "right": 1672,
     "bottom": 854
   },
+  "victoryBox": {
+    "left": 270,
+    "top": 360,
+    "right": 445,
+    "bottom": 425
+  },
+  "headerBox": {},
   "erase": {
     "left": 800,
     "right": 845

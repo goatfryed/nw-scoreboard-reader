@@ -16,6 +16,7 @@ export interface EraseConfig {
 export interface ReaderOptions {
   type: 'opr' | 'war';
   scoreBox: ScoreBox;
+  victoryBox: ScoreBox;
   erase: EraseConfig;
   threshold?: number;
 }
@@ -52,6 +53,12 @@ class ConfigManager {
         right: parseInt(process.env.CROP_RIGHT || '0', 10),
         bottom: parseInt(process.env.CROP_BOTTOM || '0', 10),
       },
+      victoryBox: {
+        left: parseInt(process.env.VICTORY_LEFT || '270', 10),
+        top: parseInt(process.env.VICTORY_TOP || '360', 10),
+        right: parseInt(process.env.VICTORY_RIGHT || '445', 10),
+        bottom: parseInt(process.env.VICTORY_BOTTOM || '425', 10),
+      },
       erase: {
         left: parseInt(process.env.ERASE_LEFT || '0', 10),
         right: parseInt(process.env.ERASE_RIGHT || '0', 10),
@@ -81,6 +88,12 @@ class ConfigManager {
             top: jsonConfig.scoreBox?.top ?? defaults.scoreBox.top,
             right: jsonConfig.scoreBox?.right ?? defaults.scoreBox.right,
             bottom: jsonConfig.scoreBox?.bottom ?? defaults.scoreBox.bottom,
+          },
+          victoryBox: {
+            left: jsonConfig.victoryBox?.left ?? defaults.victoryBox.left,
+            top: jsonConfig.victoryBox?.top ?? defaults.victoryBox.top,
+            right: jsonConfig.victoryBox?.right ?? defaults.victoryBox.right,
+            bottom: jsonConfig.victoryBox?.bottom ?? defaults.victoryBox.bottom,
           },
           erase: {
             left: jsonConfig.erase?.left ?? defaults.erase.left,
@@ -120,6 +133,7 @@ class ConfigManager {
       ...config,
       ...overrides,
       scoreBox: overrides.scoreBox ? { ...config.scoreBox, ...overrides.scoreBox } : config.scoreBox,
+      victoryBox: overrides.victoryBox ? { ...config.victoryBox, ...overrides.victoryBox } : config.victoryBox,
       erase: overrides.erase ? { ...config.erase, ...overrides.erase } : config.erase,
       upload: overrides.upload ? { ...config.upload, ...overrides.upload } : config.upload,
     };
