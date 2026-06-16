@@ -3,10 +3,14 @@ import * as path from 'path';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
 import convert from 'color-convert';
+import { configManager, ReaderOptions } from './config';
+
+export { ReaderOptions };
 
 const OprRawStats = ["kda", "damage", "healing", "blocked", "resources"];
 const OprCsvHeaders = ["kills", "deaths", "assists", "damage", "healing", "blocked", "resources"];
 const WarStats = ["kills", "deaths", "assists", "damage", "healing"];
+
 
 interface ScoreboardRow {
   side: string;
@@ -78,7 +82,7 @@ async function preprocessImageForOCR(imagePath: string): Promise<string> {
   const metadata = await sharp(imagePath).metadata();
   const width = metadata.width || 0;
 
-  const thresholdVal = process.env.OCR_THRESHOLD ? parseInt(process.env.OCR_THRESHOLD, 10) : 160;
+  const thresholdVal = configManager.getConfig().threshold ?? 160;
   const { data, info } = await sharp(imagePath)
     .resize({ width: width * 2, kernel: 'cubic' })
     .grayscale()
@@ -108,15 +112,14 @@ function eraseIconColumn(
   actualHeight: number,
   originalWidth: number
 ): void {
-  const eraseLeftStr = process.env.ERASE_LEFT;
-  const eraseRightStr = process.env.ERASE_RIGHT;
-  if (!eraseLeftStr || !eraseRightStr) return;
+  const config = configManager.getConfig();
+  const rawEraseLeft = config.erase.left;
+  const rawEraseRight = config.erase.right;
+  if (!rawEraseLeft && !rawEraseRight) return;
 
-  const rawEraseLeft = parseInt(eraseLeftStr, 10);
-  const rawEraseRight = parseInt(eraseRightStr, 10);
-  if (isNaN(rawEraseLeft) || isNaN(rawEraseRight) || rawEraseRight <= rawEraseLeft) return;
+  if (rawEraseRight <= rawEraseLeft) return;
 
-  const cropLeft = process.env.CROP_LEFT ? parseInt(process.env.CROP_LEFT, 10) : 0;
+  const cropLeft = config.scoreBox.left;
   const eraseLeft = Math.max(0, rawEraseLeft - cropLeft);
   const eraseRight = Math.max(0, rawEraseRight - cropLeft);
 
@@ -163,7 +166,7 @@ function parseRawOcrLines(
   rgbHeight: number,
   rgbChannels: number
 ): ScoreboardRow[] {
-  const gameType = process.env.GAME_TYPE || 'opr';
+  const gameType = configManager.getConfig().type || 'opr';
   const statsList = gameType === 'war' ? WarStats : OprRawStats;
   const numStats = statsList.length;
   const expectedMinParts = numStats + 3; // Rank + Name + Score + Stats
@@ -292,7 +295,7 @@ function formatDateTime(date: Date): string {
 }
 
 function writeToCsv(rows: ScoreboardRow[], csvOutputPath: string, startTime: Date): void {
-  const gameType = process.env.GAME_TYPE || 'opr';
+  const gameType = configManager.getConfig().type || 'opr';
   const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
 
   const outDir = path.dirname(csvOutputPath);

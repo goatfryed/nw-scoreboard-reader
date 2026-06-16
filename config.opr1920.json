@@ -1,0 +1,18 @@
+{
+  "type": "opr",
+  "scoreBox": {
+    "left": 710,
+    "top": 360,
+    "right": 1672,
+    "bottom": 854
+  },
+  "erase": {
+    "left": 800,
+    "right": 845
+  },
+  "spreadSheetId": "1lJrTw9okwrOi9CyzLr_M3ecYi8cDcG4m-4Gtx-NsgCQ",
+  "upload": {
+    "range": "'scoreboards'!A2:L",
+    "append": true
+  }
+}

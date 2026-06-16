@@ -5,10 +5,9 @@ import { Command } from 'commander';
 import { downloadClip } from './twitch';
 import { extractFrames } from './ffmpeg';
 import { cropAndStitchFrames } from './stitch';
-import { extractScoreboardToCsv } from './ocr';
-import { uploadCsvToGoogleSheets } from './upload';
-import { captureSpreadsheetScreenshot } from './screenshot';
-
+import { extractScoreboardToCsv } from './scoreparser';
+import { uploadCsvToGoogleSheets, captureSpreadsheetScreenshot } from './sheets';
+import { configManager } from './config';
 
 function getModeArg(): string {
   for (let i = 0; i < process.argv.length; i++) {
@@ -27,6 +26,7 @@ const mode = getModeArg();
 dotenv.config({ path: '.env.local' });
 dotenv.config({ path: `.env.${mode}` });
 dotenv.config({ path: '.env' });
+configManager.loadConfig(mode);
 
 const program = new Command();
 
@@ -42,11 +42,21 @@ program
   .action(async (clipUrl: string, options: { mode: string; append: boolean }) => {
     const startTime = new Date();
     try {
+      configManager.loadConfig(options.mode);
+      if (options.append !== undefined) {
+        configManager.updateConfig({
+          upload: {
+            ...configManager.getConfig().upload,
+            append: options.append,
+          }
+        });
+      }
+
       console.log("NW Scoreboard Reader CLI - Full Pipeline");
       console.log("---------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
       console.log(`Mode:     ${options.mode}`);
-      console.log(`Append:   ${options.append}`);
+      console.log(`Append:   ${configManager.getConfig().upload.append}`);
 
       const defaultVideoPath = '.tmp/clip.mp4';
       const defaultStitchedPath = '.tmp/stitched.png';
@@ -90,7 +100,7 @@ program
       await extractScoreboardToCsv(defaultStitchedPath, defaultCsvPath, startTime);
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
-      await uploadCsvToGoogleSheets(defaultCsvPath, options.append);
+      await uploadCsvToGoogleSheets(defaultCsvPath, configManager.getConfig());
 
       console.log("\nPipeline execution complete!");
     } catch (err) {
@@ -108,6 +118,7 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (clipUrl: string, options: { output: string; mode: string }) => {
     try {
+      configManager.loadConfig(options.mode);
       console.log("NW Scoreboard Reader CLI - Clip Download");
       console.log("----------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
@@ -147,7 +158,10 @@ program
   .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string }) => {
     const startTime = new Date();
     try {
-      process.env.GAME_TYPE = options.gameType;
+      configManager.loadConfig(options.mode);
+      if (options.gameType) {
+        configManager.updateConfig({ type: options.gameType as 'opr' | 'war' });
+      }
 
       console.log("NW Scoreboard Reader CLI - Parse & OCR");
       console.log("--------------------------------------");
@@ -155,7 +169,7 @@ program
       console.log(`Output Image: ${options.output}`);
       console.log(`CSV Output:   ${options.csv}`);
       console.log(`FPS:          ${options.fps}`);
-      console.log(`Game Type:    ${options.gameType}`);
+      console.log(`Game Type:    ${configManager.getConfig().type}`);
       console.log(`Mode:         ${options.mode}`);
 
       if (!fs.existsSync(options.input)) {
@@ -193,11 +207,21 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (options: { csv: string; append: boolean; mode: string }) => {
     try {
+      configManager.loadConfig(options.mode);
+      if (options.append !== undefined) {
+        configManager.updateConfig({
+          upload: {
+            ...configManager.getConfig().upload,
+            append: options.append,
+          }
+        });
+      }
+
       console.log("NW Scoreboard Reader CLI - Google Sheets Upload");
       console.log("-----------------------------------------------");
       console.log(`CSV Path: ${options.csv}`);
-      console.log(`Append:   ${options.append}`);
-      await uploadCsvToGoogleSheets(options.csv, options.append);
+      console.log(`Append:   ${configManager.getConfig().upload.append}`);
+      await uploadCsvToGoogleSheets(options.csv, configManager.getConfig());
     } catch (err) {
       console.error("Upload failed:", err);
       process.exit(1);
@@ -212,10 +236,12 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (options: { output: string; mode: string }) => {
     try {
+      configManager.loadConfig(options.mode);
+
       console.log("NW Scoreboard Reader CLI - Spreadsheet Screenshot");
       console.log("-----------------------------------------------");
       console.log(`Output Path: ${options.output}`);
-      await captureSpreadsheetScreenshot(options.output);
+      await captureSpreadsheetScreenshot(options.output, configManager.getConfig());
     } catch (err) {
       console.error("Screenshot failed:", err);
       process.exit(1);

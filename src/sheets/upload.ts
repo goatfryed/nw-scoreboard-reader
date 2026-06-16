@@ -1,12 +1,21 @@
 import * as fs from 'fs';
-import { uploadRowsToGoogleSheets } from './sheets';
+import { uploadRowsToGoogleSheets } from './api';
+import { SheetsOptionBase } from '.';
 
-export async function uploadCsvToGoogleSheets(csvPath: string, append: boolean = process.env.GOOGLE_SHEETS_APPEND === 'true'): Promise<void> {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  const range = process.env.GOOGLE_SHEETS_RANGE || 'Sheet1!A2:H';
+export interface UploadOptions extends SheetsOptionBase {
+  upload: {
+    range: string;
+    append?: boolean;
+  }
+}
+
+export async function uploadCsvToGoogleSheets(csvPath: string, options: UploadOptions): Promise<void> {
+  const spreadsheetId = options.spreadSheetId;
+  const range = options.upload.range || 'Sheet1!A2:H';
+  const append = options.upload.append ?? false;
 
   if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEETS_SPREADSHEET_ID is not defined in the environment.');
+    throw new Error('spreadSheetId is not defined in the configuration.');
   }
 
   if (!fs.existsSync(csvPath)) {

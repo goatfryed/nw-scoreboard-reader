@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
+import { configManager } from './config';
+
 
 interface CropConfig {
   top: number;
@@ -135,11 +137,12 @@ export async function cropAndStitchFrames(
 }
 
 function getCropConfig(): CropConfig {
+  const scoreBox = configManager.getConfig().scoreBox;
   return {
-    top: parseInt(process.env.CROP_TOP || '0', 10),
-    bottom: parseInt(process.env.CROP_BOTTOM || '0', 10),
-    left: parseInt(process.env.CROP_LEFT || '0', 10),
-    right: parseInt(process.env.CROP_RIGHT || '0', 10),
+    top: scoreBox.top,
+    bottom: scoreBox.bottom,
+    left: scoreBox.left,
+    right: scoreBox.right,
   };
 }
 

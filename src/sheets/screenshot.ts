@@ -2,21 +2,24 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import sharp from 'sharp';
-import { exportSheetAsPdf, getSheetGidByName } from './sheets';
+import { exportSheetAsPdf, getSheetGidByName } from './api';
+import { SheetsOptionBase } from '.';
 
-export async function captureSpreadsheetScreenshot(outputPath: string): Promise<void> {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  const screenshotsConfig = process.env.GOOGLE_SHEETS_SCREENSHOTS || '';
+export interface ScreenshotOptions extends SheetsOptionBase {
+  screenshot: string[];
+}
+
+export async function captureSpreadsheetScreenshot(outputPath: string, options: ScreenshotOptions): Promise<void> {
+  const spreadsheetId = options.spreadSheetId;
 
   if (!spreadsheetId) {
-    throw new Error('GOOGLE_SHEETS_SPREADSHEET_ID is not defined in the environment.');
+    throw new Error('spreadSheetId is not defined in the configuration.');
   }
 
-  // Parse configurations (format: gid:range,gid:range)
+  // Parse configurations (format: gid:range)
   const configs: { gid: string; range: string }[] = [];
-  if (screenshotsConfig) {
-    const parts = screenshotsConfig.split(',');
-    for (const part of parts) {
+  if (options.screenshot && options.screenshot.length > 0) {
+    for (const part of options.screenshot) {
       const colIdx = part.indexOf(':');
       if (colIdx !== -1) {
         configs.push({
@@ -24,13 +27,6 @@ export async function captureSpreadsheetScreenshot(outputPath: string): Promise<
           range: part.substring(colIdx + 1).trim()
         });
       }
-    }
-  } else {
-    // Fallback to legacy single variables
-    const gid = process.env.GOOGLE_SHEETS_SCREENSHOT_GID;
-    const range = process.env.GOOGLE_SHEETS_SCREENSHOT_RANGE || 'A1:Q83';
-    if (gid) {
-      configs.push({ gid, range });
     }
   }
 
@@ -140,9 +136,9 @@ export async function captureSpreadsheetScreenshot(outputPath: string): Promise<
         background: { r: 255, g: 255, b: 255, alpha: 1 }
       }
     })
-    .composite(compositeInput)
-    .png()
-    .toBuffer();
+      .composite(compositeInput)
+      .png()
+      .toBuffer();
 
     // Ensure output directory exists
     const destDir = path.dirname(targetOutputPath);

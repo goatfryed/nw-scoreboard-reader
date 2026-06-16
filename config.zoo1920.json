@@ -1,0 +1,22 @@
+{
+  "type": "war",
+  "scoreBox": {
+    "left": 710,
+    "top": 360,
+    "right": 1672,
+    "bottom": 854
+  },
+  "erase": {
+    "left": 800,
+    "right": 845
+  },
+  "spreadSheetId": "1I0VwJahT4h3Jc9ZmzVEKvvG1o7S9fnz8GgtumoGJxs8",
+  "upload": {
+    "range": "'Data Entry'!B2:M",
+    "append": false
+  },
+  "screenshot": [
+    "277259394:A1:Q83",
+    "1319905456:A1:N39"
+  ]
+}
