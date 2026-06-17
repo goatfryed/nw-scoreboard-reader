@@ -37,10 +37,19 @@ jobs:
           node-version: 24
           cache: 'pnpm'
 
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        id: apt-cache
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-poppler-utils
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg poppler-utils
+          sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: Install Node Dependencies
         run: pnpm install --frozen-lockfile
