@@ -17,7 +17,7 @@
     "right": 1672,
     "bottom": 854,
     "threshold": 100,
-    "yTolerance": 15,
+    "yTolerance": 25,
     "segments": [
       {
         "end": 785,

@@ -15,7 +15,7 @@
     "right": 1672,
     "bottom": 854,
     "threshold": 100,
-    "yTolerance": 15,
+    "yTolerance": 25,
     "segments": [
       {
         "end": 785,
@@ -27,14 +27,9 @@
         "type": "drop"
       },
       {
-        "end": 1047,
+        "end": 1044,
         "type": "text",
         "header": "name"
-      },
-      {
-        "end": 1128,
-        "type": "number",
-        "header": "score"
       },
       {
         "type": "number"
@@ -54,10 +49,6 @@
     "right": 1460,
     "bottom": 190,
     "threshold": 105
-  },
-  "erase": {
-    "left": 800,
-    "right": 845
   },
   "spreadSheetId": "1I0VwJahT4h3Jc9ZmzVEKvvG1o7S9fnz8GgtumoGJxs8",
   "upload": {
