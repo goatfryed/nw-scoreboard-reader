@@ -1,11 +1,45 @@
 {
-  "type": "war",
+  "columnNames": [
+    "Rank",
+    "Name",
+    "Score",
+    "kills",
+    "deaths",
+    "assists",
+    "healing",
+    "damage"
+  ],
   "scoreBox": {
     "left": 710,
     "top": 360,
     "right": 1672,
     "bottom": 854,
-    "threshold": 100
+    "threshold": 100,
+    "yTolerance": 15,
+    "segments": [
+      {
+        "end": 785,
+        "type": "number",
+        "name": "rank"
+      },
+      {
+        "end": 860,
+        "type": "drop"
+      },
+      {
+        "end": 1047,
+        "type": "text",
+        "header": "name"
+      },
+      {
+        "end": 1128,
+        "type": "number",
+        "header": "score"
+      },
+      {
+        "type": "number"
+      }
+    ]
   },
   "victoryBox": {
     "left": 270,

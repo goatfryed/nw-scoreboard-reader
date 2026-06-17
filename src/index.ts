@@ -174,16 +174,12 @@ program
   .option('-o, --output <path>', 'Stitched image output path', '.tmp/stitched.png')
   .option('--csv <path>', 'Output CSV file path', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
-  .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .option('--match-id <id>', 'Specify a custom match ID (if omitted, a random 8-character hash will be generated)')
-  .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string; matchId?: string }) => {
+  .action(async (options: { input: string; output: string; csv: string; fps: string; mode: string; matchId?: string }) => {
     const startTime = new Date();
     try {
       configManager.loadConfig(options.mode);
-      if (options.gameType) {
-        configManager.updateConfig({ type: options.gameType as 'opr' | 'war' });
-      }
 
       const matchId = options.matchId || generateRandomHash();
 
@@ -193,7 +189,7 @@ program
       console.log(`Output Image: ${options.output}`);
       console.log(`CSV Output:   ${options.csv}`);
       console.log(`FPS:          ${options.fps}`);
-      console.log(`Game Type:    ${configManager.getConfig().type}`);
+      console.log(`Column Names: ${configManager.getConfig().columnNames.join(', ')}`);
       console.log(`Mode:         ${options.mode}`);
       console.log(`Match ID:     ${matchId}`);
 

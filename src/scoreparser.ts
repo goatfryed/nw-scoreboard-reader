@@ -9,9 +9,6 @@ import { cropAndStitchFrames } from './stitch';
 
 export { ReaderOptions };
 
-const OprRawStats = ["kda", "damage", "healing", "blocked", "resources"];
-const OprCsvHeaders = ["kills", "deaths", "assists", "damage", "healing", "blocked", "resources"];
-const WarStats = ["kills", "deaths", "assists", "damage", "healing"];
 
 export interface ScoreboardRow {
   side: string;
@@ -212,39 +209,217 @@ export async function parseVictoryInfo(firstFramePath: string): Promise<VictoryI
 /**
  * Core parsing logic to extract rows from cropped and stitched image without decoration.
  */
+async function performSegmentOCR(
+  imagePath: string,
+  type: string,
+  whitelist?: string
+): Promise<{ text: string; lines: OcrLine[] }> {
+  const worker = await createWorker('eng');
+  if (whitelist) {
+    await worker.setParameters({
+      tessedit_char_whitelist: whitelist,
+    });
+  }
+  const { data } = await worker.recognize(imagePath);
+  const lines: OcrLine[] = [];
+  if (data.lines) {
+    for (const line of data.lines) {
+      const bbox = line.bbox;
+      if (bbox) {
+        const yCenter = (bbox.y0 + bbox.y1) / 2;
+        lines.push({
+          text: line.text,
+          yCenter,
+        });
+      }
+    }
+  }
+  await worker.terminate();
+  return { text: data.text, lines };
+}
+
 export async function extractScoreboardRows(imagePath: string): Promise<ScoreboardRow[]> {
   const preprocessedPath = await preprocessImageForOCR(imagePath);
-
-  console.log(`Running OCR on preprocessed image...`);
-  const { text: rawText, lines: ocrLines } = await performOCR(preprocessedPath);
-
-  const originalMetadata = await sharp(imagePath).metadata();
-  const originalHeight = originalMetadata.height || 0;
+  const config = configManager.getConfig();
+  const segments = config.scoreBox.segments || [];
 
   const { data: rgbBuffer, info: rgbInfo } = await sharp(imagePath)
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  if (ocrLines.length === 0 && rawText.trim()) {
-    const rawLines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
-    const estRowHeight = originalHeight / rawLines.length;
-    for (let i = 0; i < rawLines.length; i++) {
-      ocrLines.push({
-        text: rawLines[i],
-        yCenter: (i + 0.5) * estRowHeight * 2,
-      });
+  if (segments.length === 0) {
+    console.log(`No segments configured. Running standard full-image OCR...`);
+    const { text: rawText, lines: ocrLines } = await performOCR(preprocessedPath);
+    const originalMetadata = await sharp(imagePath).metadata();
+    const originalHeight = originalMetadata.height || 0;
+    const finalOcrLines = [...ocrLines];
+
+    if (finalOcrLines.length === 0 && rawText.trim()) {
+      const rawLines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
+      const estRowHeight = originalHeight / rawLines.length;
+      for (let i = 0; i < rawLines.length; i++) {
+        finalOcrLines.push({
+          text: rawLines[i],
+          yCenter: (i + 0.5) * estRowHeight * 2,
+        });
+      }
     }
+
+    console.log('Parsing raw OCR text and detecting row colors...');
+    return parseRawOcrLines(
+      finalOcrLines,
+      rgbBuffer,
+      rgbInfo.width,
+      rgbInfo.height,
+      rgbInfo.channels
+    );
   }
 
-  console.log('Parsing raw OCR text and detecting row colors...');
-  const rows = parseRawOcrLines(
-    ocrLines,
-    rgbBuffer,
-    rgbInfo.width,
-    rgbInfo.height,
-    rgbInfo.channels
-  );
+  console.log(`Starting segmented OCR parser using ${segments.length} segments...`);
+  const metadata = await sharp(preprocessedPath).metadata();
+  const preprocessedWidth = metadata.width || 0;
+  const preprocessedHeight = metadata.height || 0;
+  const originalScoreBoxWidth = config.scoreBox.right - config.scoreBox.left;
+  const preprocessedScale = preprocessedWidth / originalScoreBoxWidth;
 
+  interface SegmentOcrResult {
+    segment: typeof segments[0];
+    lines: OcrLine[];
+  }
+
+  const segmentResults: SegmentOcrResult[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment.type === 'drop') {
+      console.log(`Segment ${i + 1} (drop): Skipping.`);
+      continue;
+    }
+
+    const segLeftOriginal = i === 0 ? config.scoreBox.left : segments[i - 1].end!;
+    const segRightOriginal = segment.end ?? config.scoreBox.right;
+    const segWidthOriginal = segRightOriginal - segLeftOriginal;
+
+    if (segWidthOriginal <= 0) {
+      console.log(`Segment ${i + 1} (${segment.type}): Invalid width (${segWidthOriginal}px). Skipping.`);
+      continue;
+    }
+
+    const segLeftPreprocessed = Math.round((segLeftOriginal - config.scoreBox.left) * preprocessedScale);
+    const segWidthPreprocessed = Math.round(segWidthOriginal * preprocessedScale);
+
+    console.log(`Segment ${i + 1} (${segment.type}): X-range original [${segLeftOriginal} - ${segRightOriginal}], preprocessed [${segLeftPreprocessed} - ${segLeftPreprocessed + segWidthPreprocessed}]`);
+
+    const colPath = path.join(process.cwd(), '.tmp', `ocr-column-${i}.png`);
+    await sharp(preprocessedPath)
+      .extract({
+        left: Math.max(0, Math.min(segLeftPreprocessed, preprocessedWidth - 1)),
+        top: 0,
+        width: Math.max(1, Math.min(segWidthPreprocessed, preprocessedWidth - segLeftPreprocessed)),
+        height: preprocessedHeight
+      })
+      .png()
+      .toFile(colPath);
+
+    let whitelist: string | undefined;
+    if (segment.type === 'number') {
+      whitelist = '0123456789,';
+    } else if (segment.type === 'kda') {
+      whitelist = '0123456789/';
+    }
+
+    const { lines } = await performSegmentOCR(colPath, segment.type, whitelist);
+    segmentResults.push({ segment, lines });
+    console.log(`Segment ${i + 1} (${segment.type}): Extracted ${lines.length} lines.`);
+  }
+
+  let nameResultIndex = segmentResults.findIndex(r => r.segment.header === 'name');
+  if (nameResultIndex === -1) {
+    nameResultIndex = segmentResults.findIndex(r => r.segment.type === 'text');
+  }
+  if (nameResultIndex === -1) {
+    nameResultIndex = 0;
+  }
+
+  const nameResult = segmentResults[nameResultIndex];
+  if (!nameResult) {
+    console.warn(`No text or name segment found. Returning empty rows.`);
+    return [];
+  }
+
+  const rows: ScoreboardRow[] = [];
+  const expectedStatsLength = Math.max(0, (config.columnNames?.length || 3) - 3);
+
+  console.log(`Aligning columns using segment ${nameResult.segment.header || nameResult.segment.name || nameResultIndex} as name reference...`);
+
+  for (const nameLine of nameResult.lines) {
+    const yCenter = nameLine.yCenter;
+    const cleanedName = nameLine.text.trim().replace(/^[^a-zA-Z]+/, '').replace(/~+$/, '').trim();
+    if (!cleanedName) continue;
+
+    const rgbY = Math.round(yCenter / preprocessedScale); 
+    const side = detectSideColor(rgbY, rgbBuffer, rgbInfo.width, rgbInfo.height, rgbInfo.channels);
+
+    const row: ScoreboardRow = {
+      side,
+      rank: '0',
+      name: cleanedName,
+      score: '0',
+      stats: [],
+    };
+
+    for (const res of segmentResults) {
+      let bestLine: OcrLine | null = null;
+      let minDiff = Infinity;
+      const tolerance = config.scoreBox.yTolerance ?? 15;
+
+      for (const line of res.lines) {
+        const diff = Math.abs(line.yCenter - yCenter);
+        if (diff < tolerance && diff < minDiff) {
+          minDiff = diff;
+          bestLine = line;
+        }
+      }
+
+      const segment = res.segment;
+      if (segment.type === 'number') {
+        const cleanVal = bestLine ? bestLine.text.replace(/,/g, '').trim() : '';
+        const parts = cleanVal.split(/\s+/).filter(Boolean);
+
+        if (segment.header || segment.name) {
+          if (parts.length > 1) {
+            console.warn(`[OCR Warning] Segment "${segment.header || segment.name}" expected 1 column, got ${parts.length}`);
+          }
+          const val = parts[0] || '0';
+          if (segment.name === 'rank') {
+            row.rank = val.replace(/[^\d]/g, '');
+          } else if (segment.header === 'score') {
+            row.score = val.replace(/[^\d]/g, '');
+          }
+        } else {
+          row.stats.push(...parts);
+        }
+      } else if (segment.type === 'kda') {
+        const cleanVal = bestLine ? bestLine.text.replace(/[^0-9/]/g, '').trim() : '0/0/0';
+        const parts = cleanVal.split('/');
+        const kills = parts[0] || '0';
+        const deaths = parts[1] || '0';
+        const assists = parts[2] || '0';
+        row.stats.push(kills, deaths, assists);
+      }
+    }
+
+    while (row.stats.length < expectedStatsLength) {
+      row.stats.push('0');
+    }
+    if (row.stats.length > expectedStatsLength) {
+      row.stats = row.stats.slice(0, expectedStatsLength);
+    }
+
+    rows.push(row);
+  }
+
+  console.log(`Parsed ${rows.length} rows using segmented OCR.`);
   return rows;
 }
 
@@ -282,22 +457,35 @@ export function decorateScoreboardRows(
  * Writes decorated rows to CSV.
  */
 export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
-  const gameType = configManager.getConfig().type || 'opr';
-  const statsList = gameType === 'war' ? WarStats : OprCsvHeaders;
+  const config = configManager.getConfig();
+  const columnNames = config.columnNames || [];
 
   const outDir = path.dirname(csvOutputPath);
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  const statHeaders = statsList.join(',');
-  const header = `Match,Date,Side,Win,Rank,Name,Score,${statHeaders}\n`;
+  const header = ['Match', 'Date', 'Side', 'Win', ...columnNames].join(',') + '\n';
+  const expectedLength = 4 + columnNames.length;
 
   const csvContent = rows
     .map((r) => {
-      const statsFields = r.stats.map((s) => `"${s}"`).join(',');
-      const winStr = r.win ? 'TRUE' : 'FALSE';
-      return `"${r.matchId}","${r.date}","${r.side}","${winStr}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
+      const rowData = [
+        r.matchId,
+        r.date,
+        r.side,
+        r.win ? 'TRUE' : 'FALSE',
+        r.rank,
+        r.name,
+        r.score,
+        ...r.stats
+      ];
+
+      if (rowData.length !== expectedLength) {
+        console.warn(`[CSV Warning] Row column count (${rowData.length}) does not match expected header count (${expectedLength}) for player "${r.name}"`);
+      }
+
+      return rowData.map((val) => `"${val.replace(/"/g, '""')}"`).join(',');
     })
     .join('\n');
 
@@ -321,8 +509,6 @@ async function preprocessImageForOCR(imagePath: string): Promise<string> {
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  eraseIconColumn(data, info.width, info.height, width);
-
   await sharp(data, {
     raw: {
       width: info.width,
@@ -334,37 +520,6 @@ async function preprocessImageForOCR(imagePath: string): Promise<string> {
     .toFile(ocrTempPath);
 
   return ocrTempPath;
-}
-
-function eraseIconColumn(
-  data: Buffer,
-  actualWidth: number,
-  actualHeight: number,
-  originalWidth: number
-): void {
-  const config = configManager.getConfig();
-  const rawEraseLeft = config.erase.left;
-  const rawEraseRight = config.erase.right;
-  if (!rawEraseLeft && !rawEraseRight) return;
-
-  if (rawEraseRight <= rawEraseLeft) return;
-
-  const cropLeft = config.scoreBox.left;
-  const eraseLeft = Math.max(0, rawEraseLeft - cropLeft);
-  const eraseRight = Math.max(0, rawEraseRight - cropLeft);
-
-  if (eraseRight <= eraseLeft) return;
-
-  const scale = actualWidth / originalWidth;
-  const scaledLeft = Math.round(eraseLeft * scale);
-  const scaledRight = Math.round(eraseRight * scale);
-
-  for (let y = 0; y < actualHeight; y++) {
-    const rowOffset = y * actualWidth;
-    for (let x = scaledLeft; x < scaledRight && x < actualWidth; x++) {
-      data[rowOffset + x] = 255;
-    }
-  }
 }
 
 async function performOCR(imagePath: string): Promise<{ text: string; lines: OcrLine[] }> {
@@ -396,10 +551,9 @@ function parseRawOcrLines(
   rgbHeight: number,
   rgbChannels: number
 ): ScoreboardRow[] {
-  const gameType = configManager.getConfig().type || 'opr';
-  const statsList = gameType === 'war' ? WarStats : OprRawStats;
-  const numStats = statsList.length;
-  const expectedMinParts = numStats + 3; // Rank + Name + Score + Stats
+  const config = configManager.getConfig();
+  const columnNames = config.columnNames || [];
+  const expectedStatsLength = Math.max(0, columnNames.length - 3);
 
   const rows: ScoreboardRow[] = [];
 
@@ -411,19 +565,30 @@ function parseRawOcrLines(
     if (!line) continue;
 
     const cleaned = line.replace(/^[|:.\s]+|[|:.\s]+$/g, '');
-    const parts = cleaned.split(/\s+/);
-    if (parts.length < 3) continue;
+    const rawParts = cleaned.split(/\s+/);
+    if (rawParts.length < 3) continue;
+
+    // Split any part containing a '/' (KDA) into 3 separate parts
+    const parts: string[] = [];
+    for (const part of rawParts) {
+      if (part.includes('/')) {
+        const kdaParts = part.split('/');
+        parts.push(kdaParts[0] || '0', kdaParts[1] || '0', kdaParts[2] || '0');
+      } else {
+        parts.push(part);
+      }
+    }
 
     let rank = '';
     let name = '';
     let score = '';
     let stats: string[] = [];
 
-    if (parts.length >= expectedMinParts) {
+    if (parts.length >= expectedStatsLength + 3) {
       rank = cleanDigitsOnly(parts[0]);
-      stats = parts.slice(-numStats).map(cleanStatsOnly);
-      score = cleanDigitsOnly(parts[parts.length - numStats - 1]);
-      name = parts.slice(1, parts.length - numStats - 1).join(' ');
+      stats = parts.slice(-expectedStatsLength).map(cleanStatsOnly);
+      score = cleanDigitsOnly(parts[parts.length - expectedStatsLength - 1]);
+      name = parts.slice(1, parts.length - expectedStatsLength - 1).join(' ');
     } else {
       rank = cleanDigitsOnly(parts[0]);
       name = parts[1];
@@ -434,20 +599,11 @@ function parseRawOcrLines(
     const cleanedName = name.replace(/^[^a-zA-Z]+/, '').replace(/~+$/, '').trim();
     name = cleanedName || name;
 
-    while (stats.length < numStats) {
+    while (stats.length < expectedStatsLength) {
       stats.push('0');
     }
-    if (stats.length > numStats) {
-      stats = stats.slice(0, numStats);
-    }
-
-    if (gameType === 'opr') {
-      const kdaStr = stats[0] || '0/0/0';
-      const kdaParts = kdaStr.split('/');
-      const kills = kdaParts[0] || '0';
-      const deaths = kdaParts[1] || '0';
-      const assists = kdaParts[2] || '0';
-      stats = [kills, deaths, assists, ...stats.slice(1)];
+    if (stats.length > expectedStatsLength) {
+      stats = stats.slice(0, expectedStatsLength);
     }
 
     const originalY = Math.round(ocrLine.yCenter / 2);

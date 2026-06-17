@@ -1,12 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface SegmentConfig {
+  end?: number;
+  type: 'number' | 'text' | 'kda' | 'drop';
+  name?: string;
+  header?: string;
+}
+
 export interface ScoreBox {
   left: number;
   top: number;
   right: number;
   bottom: number;
   threshold?: number;
+  segments?: SegmentConfig[];
+  yTolerance?: number;
 }
 
 export interface EraseConfig {
@@ -15,7 +24,7 @@ export interface EraseConfig {
 }
 
 export interface ReaderOptions {
-  type: 'opr' | 'war';
+  columnNames: string[];
   scoreBox: ScoreBox;
   victoryBox: ScoreBox;
   headerBox?: ScoreBox;
@@ -46,9 +55,12 @@ class ConfigManager {
     this.mode = mode;
     const configPath = path.join(process.cwd(), `config.${mode}.json`);
 
+    const gameType = (process.env.GAME_TYPE as 'opr' | 'war') || 'opr';
     // Default configuration (built from environment variables fallback)
     const defaults: AppConfig = {
-      type: (process.env.GAME_TYPE as 'opr' | 'war') || 'opr',
+      columnNames: gameType === 'war'
+        ? ["Rank", "Name", "Score", "kills", "deaths", "assists", "healing", "damage"]
+        : ["Rank", "Name", "Score", "kills", "deaths", "assists", "damage", "healing", "blocked", "resources"],
       scoreBox: {
         left: parseInt(process.env.CROP_LEFT || '0', 10),
         top: parseInt(process.env.CROP_TOP || '0', 10),
@@ -90,13 +102,15 @@ class ConfigManager {
 
         // Merge JSON config over defaults
         this.currentConfig = {
-          type: jsonConfig.type ?? defaults.type,
+          columnNames: jsonConfig.columnNames ?? defaults.columnNames,
           scoreBox: {
             left: jsonConfig.scoreBox?.left ?? defaults.scoreBox.left,
             top: jsonConfig.scoreBox?.top ?? defaults.scoreBox.top,
             right: jsonConfig.scoreBox?.right ?? defaults.scoreBox.right,
             bottom: jsonConfig.scoreBox?.bottom ?? defaults.scoreBox.bottom,
             threshold: jsonConfig.scoreBox?.threshold,
+            segments: jsonConfig.scoreBox?.segments,
+            yTolerance: jsonConfig.scoreBox?.yTolerance,
           },
           victoryBox: {
             left: jsonConfig.victoryBox?.left ?? defaults.victoryBox.left,

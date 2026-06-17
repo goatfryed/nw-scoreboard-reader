@@ -1,11 +1,51 @@
 {
-  "type": "opr",
+  "columnNames": [
+    "Rank",
+    "Name",
+    "Score",
+    "Kills",
+    "Deaths",
+    "Assists",
+    "Damage",
+    "Healing",
+    "Blocked",
+    "Resources"
+  ],
   "scoreBox": {
     "left": 710,
     "top": 360,
     "right": 1672,
     "bottom": 854,
-    "threshold": 100
+    "threshold": 100,
+    "yTolerance": 15,
+    "segments": [
+      {
+        "end": 785,
+        "type": "number",
+        "name": "rank"
+      },
+      {
+        "end": 860,
+        "type": "drop"
+      },
+      {
+        "end": 1047,
+        "type": "text",
+        "header": "name"
+      },
+      {
+        "end": 1128,
+        "type": "number",
+        "header": "score"
+      },
+      {
+        "end": 1228,
+        "type": "kda"
+      },
+      {
+        "type": "number"
+      }
+    ]
   },
   "victoryBox": {
     "left": 270,
@@ -20,10 +60,6 @@
     "right": 1460,
     "bottom": 190,
     "threshold": 105
-  },
-  "erase": {
-    "left": 800,
-    "right": 845
   },
   "spreadSheetId": "1lJrTw9okwrOi9CyzLr_M3ecYi8cDcG4m-4Gtx-NsgCQ",
   "upload": {
