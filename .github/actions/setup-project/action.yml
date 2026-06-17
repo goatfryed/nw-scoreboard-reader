@@ -29,7 +29,7 @@ runs:
       uses: actions/cache@v5
       id: apt-cache
       with:
-        path: /var/cache/apt/archives
+        path: ${{ github.workspace }}/.apt-cache
         key: ${{ runner.os }}-apt-ffmpeg-poppler-utils
         restore-keys: |
           ${{ runner.os }}-apt-
@@ -37,9 +37,19 @@ runs:
     - name: Install System Dependencies
       shell: bash
       run: |
+        mkdir -p ${{ github.workspace }}/.apt-cache
+        
+        # Copy cached deb files to apt folder if any exist
+        if [ -d "${{ github.workspace }}/.apt-cache" ] && [ "$(ls -A ${{ github.workspace }}/.apt-cache)" ]; then
+          sudo cp ${{ github.workspace }}/.apt-cache/*.deb /var/cache/apt/archives/
+        fi
+        
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends ffmpeg poppler-utils
-        sudo chown -R $USER /var/cache/apt/archives
+        
+        # Save newly downloaded packages back to our workspace cache
+        sudo cp /var/cache/apt/archives/*.deb ${{ github.workspace }}/.apt-cache/ || true
+        sudo chown -R $USER ${{ github.workspace }}/.apt-cache
 
     - name: Install Node Dependencies
       shell: bash
