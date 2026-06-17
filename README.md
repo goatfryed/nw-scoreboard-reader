@@ -11,7 +11,7 @@ A CLI tool to download Twitch clips, extract scrolling scoreboard frames, vertic
   - Scales and binarizes text using custom threshold settings.
   - Erases player icon columns in-memory to prevent OCR character recognition noise.
   - Cleans up trailing tilde characters (`~`) and common OCR spelling issues automatically.
-- **Cascading Configurations**: Dynamically prioritizes `.env.local` -> `.env.$MODE` (streamer-specific resolution profiles) -> global `.env` configuration.
+- **Upload to gooogle sheets**: Push the extracted csv to a google sheet. Requires `service account and credentials.json`
 
 ## Getting Started
 
@@ -30,31 +30,7 @@ A CLI tool to download Twitch clips, extract scrolling scoreboard frames, vertic
 
 ### Configuration
 
-Create a `.env` file (or a resolution-specific config like `.env.opr1920`) specifying crop coordinates, frame rates, and masking parameters:
-
-```env
-# Twitch API credentials
-TWITCH_CLIENT_ID=your_twitch_client_id_here
-
-# Scoreboard cropping configuration
-CROP_TOP=360
-CROP_BOTTOM=854
-CROP_LEFT=710
-CROP_RIGHT=1672
-
-# Frame sample rate
-FPS=2
-
-# Match format (opr or war)
-GAME_TYPE=opr
-
-# Player icon erasure mask (absolute x coordinates relative to the original frame)
-ERASE_LEFT=800
-ERASE_RIGHT=845
-
-# Google Sheets Append option
-GOOGLE_SHEETS_APPEND=false
-```
+Create a `config.{mode}.json` file specifying crop coordinates, frame rates, and other parameters. Compare `config.opr1920.json` and `config.zoo2560.json` to see how to configure for different resolutions.
 
 ### Usage
 
@@ -64,10 +40,10 @@ Run the pipeline by passing a Twitch clip URL:
 pnpm start https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2
 ```
 
-Options:
-- `-m, --mode <name>`: Load resolution-specific environment file `.env.<name>` (defaults to `opr1920`).
-- `--append`: Append rows to Google Sheet instead of replacing (can also set `GOOGLE_SHEETS_APPEND=true` in environment).
-- `--game-type <opr|war>`: Format target columns dynamically.
-- `--output <path>`: Custom path to save the stitched image.
-- `--csv <path>`: Custom path to save the extracted scoreboard.
+For more Details and plumbing commands see
+
+```bash
+pnpm start --help
+```
+
 
