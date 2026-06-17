@@ -46,4 +46,25 @@ For more Details and plumbing commands see
 pnpm start --help
 ```
 
+## GitHub Actions Dispatch API
 
+This pipeline can be executed asynchronously using GitHub Actions. You can trigger it programmatically using the GitHub REST API or manually via the GitHub repository interface.
+
+### Programmatic API Execution (curl)
+
+To trigger the pipeline via API, send a POST request to the GitHub dispatches endpoint:
+
+```bash
+curl -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_PAT" \
+  https://api.github.com/repos/goatfryed/nw-scoreboard-reader/actions/workflows/pipeline.yml/dispatches \
+  -d '{"ref":"main","inputs":{"clip_url":"https://clips.twitch.tv/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2","mode":"<mode>"}}'
+```
+
+where mode matches one of the available config files (opr1920, zoo1920)
+
+### Outputs & Artifacts
+The workflow uploads two separate artifact bundles:
+- `scoreboard-pipeline-results`: Contains the parsed scoreboard data (`scoreboard.csv`) and the vertically-stitched image (`stitched.png`).
+- `spreadsheet-screenshots`: Contains the screenshots generated from the Google Spreadsheet (`spreadsheet*.png`).

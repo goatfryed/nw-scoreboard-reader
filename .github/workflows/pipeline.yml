@@ -1,0 +1,78 @@
+name: Run Scoreboard Reader Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      clip_url:
+        description: 'Twitch Clip URL'
+        required: true
+        type: string
+      mode:
+        description: 'Processing Mode (e.g. opr1920, zoo1920)'
+        required: true
+        type: string
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Mode Configuration
+        run: |
+          CONFIG_FILE="config.${{ inputs.mode }}.json"
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "Error: Configuration file $CONFIG_FILE does not exist."
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg poppler-utils
+
+      - name: Install Node Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Credentials File
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > credentials.json
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+
+      - name: Convert twitch clip to google sheets
+        run: pnpm start "${{ inputs.clip_url }}" --mode "${{ inputs.mode }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials.json
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+
+      - name: Upload Scoreboard Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoreboard-pipeline-results
+          path: |
+            .tmp/scoreboard.csv
+            .tmp/stitched.png
+
+      - name: Take screenshots
+        run: pnpm start screenshot --mode "${{ inputs.mode }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials.json
+
+      - name: Upload Screenshot Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spreadsheet-screenshots
+          path: |
+            .tmp/spreadsheet*.png
