@@ -6,6 +6,7 @@ export interface ScoreBox {
   top: number;
   right: number;
   bottom: number;
+  threshold?: number;
 }
 
 export interface EraseConfig {
@@ -95,18 +96,21 @@ class ConfigManager {
             top: jsonConfig.scoreBox?.top ?? defaults.scoreBox.top,
             right: jsonConfig.scoreBox?.right ?? defaults.scoreBox.right,
             bottom: jsonConfig.scoreBox?.bottom ?? defaults.scoreBox.bottom,
+            threshold: jsonConfig.scoreBox?.threshold,
           },
           victoryBox: {
             left: jsonConfig.victoryBox?.left ?? defaults.victoryBox.left,
             top: jsonConfig.victoryBox?.top ?? defaults.victoryBox.top,
             right: jsonConfig.victoryBox?.right ?? defaults.victoryBox.right,
             bottom: jsonConfig.victoryBox?.bottom ?? defaults.victoryBox.bottom,
+            threshold: jsonConfig.victoryBox?.threshold,
           },
           headerBox: jsonConfig.headerBox ? {
             left: jsonConfig.headerBox.left ?? defaults.headerBox?.left ?? 0,
             top: jsonConfig.headerBox.top ?? defaults.headerBox?.top ?? 0,
             right: jsonConfig.headerBox.right ?? defaults.headerBox?.right ?? 0,
             bottom: jsonConfig.headerBox.bottom ?? defaults.headerBox?.bottom ?? 0,
+            threshold: jsonConfig.headerBox.threshold,
           } : defaults.headerBox,
           erase: {
             left: jsonConfig.erase?.left ?? defaults.erase.left,

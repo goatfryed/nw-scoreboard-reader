@@ -4,19 +4,22 @@
     "left": 710,
     "top": 360,
     "right": 1672,
-    "bottom": 854
+    "bottom": 854,
+    "threshold": 100
   },
   "victoryBox": {
     "left": 270,
     "top": 360,
     "right": 445,
-    "bottom": 425
+    "bottom": 425,
+    "threshold": 95
   },
   "headerBox": {
     "top": 165,
     "left": 810,
     "right": 1460,
-    "bottom": 190
+    "bottom": 190,
+    "threshold": 105
   },
   "erase": {
     "left": 800,

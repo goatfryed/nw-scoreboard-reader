@@ -61,6 +61,21 @@ export async function filterScoreboardFrames(frames: string[]): Promise<string[]
 
   for (const framePath of frames) {
     try {
+      // Save raw crop-headers.png
+      try {
+        await sharp(framePath)
+          .extract({
+            left: headerBox.left,
+            top: headerBox.top,
+            width: hbWidth,
+            height: hbHeight
+          })
+          .png()
+          .toFile(path.join(process.cwd(), '.tmp', 'crop-headers.png'));
+      } catch (err) {
+        console.error('Failed to write crop-headers.png:', err);
+      }
+
       const croppedBuffer = await sharp(framePath)
         .extract({
           left: headerBox.left,
@@ -71,20 +86,15 @@ export async function filterScoreboardFrames(frames: string[]): Promise<string[]
         .resize({ width: hbWidth * 2, kernel: 'cubic' })
         .grayscale()
         .negate({ alpha: false })
-        .threshold(160)
+        .threshold(headerBox.threshold ?? configManager.getConfig().threshold ?? 160)
         .withMetadata({ density: 300 })
         .png()
         .toBuffer();
 
-      const tempDir = path.dirname(framePath);
-      const tempPath = path.join(tempDir, `hb_temp_${path.basename(framePath)}`);
+      const tempPath = path.join(process.cwd(), '.tmp', 'ocr-headers.png');
       await fs.promises.writeFile(tempPath, croppedBuffer);
 
       const { data } = await worker.recognize(tempPath);
-
-      try {
-        fs.unlinkSync(tempPath);
-      } catch (e) {}
 
       const text = data.text.toLowerCase();
       const isMatch = text.includes('all') || text.includes('allies') || text.includes('enemies') ||
@@ -148,6 +158,21 @@ export async function parseVictoryInfo(firstFramePath: string): Promise<VictoryI
       return { victoryBoxColor: 'unknown', isVictory: true };
     }
 
+    // Save raw crop-victory-box.png
+    try {
+      await sharp(firstFramePath)
+        .extract({
+          left: victoryBox.left,
+          top: victoryBox.top,
+          width: vbWidth,
+          height: vbHeight
+        })
+        .png()
+        .toFile(path.join(process.cwd(), '.tmp', 'crop-victory-box.png'));
+    } catch (err) {
+      console.error('Failed to write crop-victory-box.png:', err);
+    }
+
     // OCR Victory Box
     const vbCroppedBuffer = await sharp(firstFramePath)
       .extract({
@@ -159,22 +184,17 @@ export async function parseVictoryInfo(firstFramePath: string): Promise<VictoryI
       .resize({ width: vbWidth * 2, kernel: 'cubic' })
       .grayscale()
       .negate({ alpha: false })
-      .threshold(160)
+      .threshold(victoryBox.threshold ?? configManager.getConfig().threshold ?? 160)
       .withMetadata({ density: 300 })
       .png()
       .toBuffer();
 
-    const tempDir = path.dirname(firstFramePath);
-    const vbTempPath = path.join(tempDir, `victory_box_preprocessed_${Date.now()}.png`);
+    const vbTempPath = path.join(process.cwd(), '.tmp', 'ocr-victory-box.png');
     await fs.promises.writeFile(vbTempPath, vbCroppedBuffer);
 
     const worker = await createWorker('eng');
     const { data: vbData } = await worker.recognize(vbTempPath);
     await worker.terminate();
-
-    try {
-      fs.unlinkSync(vbTempPath);
-    } catch (e) {}
 
     const vbText = vbData.text.toLowerCase();
     console.log(`Victory Box OCR text: "${vbText.trim()}"`);
@@ -197,14 +217,6 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
 
   console.log(`Running OCR on preprocessed image...`);
   const { text: rawText, lines: ocrLines } = await performOCR(preprocessedPath);
-
-  try {
-    fs.copyFileSync(preprocessedPath, path.join(path.dirname(imagePath), 'preprocessed.png'));
-  } catch (e) { }
-
-  try {
-    fs.unlinkSync(preprocessedPath);
-  } catch (e) { }
 
   const originalMetadata = await sharp(imagePath).metadata();
   const originalHeight = originalMetadata.height || 0;
@@ -293,13 +305,14 @@ export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
 }
 
 async function preprocessImageForOCR(imagePath: string): Promise<string> {
-  const ocrTempPath = path.join(path.dirname(imagePath), 'ocr_preprocessed.png');
+  const ocrTempPath = path.join(path.dirname(imagePath), 'ocr-scoreboard.png');
   console.log('Preprocessing image for OCR (scaling, grayscaling, inverting, thresholding)...');
 
   const metadata = await sharp(imagePath).metadata();
   const width = metadata.width || 0;
 
-  const thresholdVal = configManager.getConfig().threshold ?? 160;
+  const scoreBox = configManager.getConfig().scoreBox;
+  const thresholdVal = scoreBox.threshold ?? configManager.getConfig().threshold ?? 160;
   const { data, info } = await sharp(imagePath)
     .resize({ width: width * 2, kernel: 'cubic' })
     .grayscale()
