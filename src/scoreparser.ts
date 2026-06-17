@@ -24,6 +24,7 @@ export interface ScoreboardRow {
 export interface DecoratedRow extends ScoreboardRow {
   date: string;
   win: boolean;
+  matchId: string;
 }
 
 export interface VictoryInfo {
@@ -241,7 +242,8 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
 export function decorateScoreboardRows(
   rows: ScoreboardRow[],
   victoryInfo: VictoryInfo,
-  startTime: Date
+  startTime: Date,
+  matchId: string
 ): DecoratedRow[] {
   const dateStr = formatDateTime(startTime);
   const { victoryBoxColor, isVictory } = victoryInfo;
@@ -259,6 +261,7 @@ export function decorateScoreboardRows(
       ...r,
       date: dateStr,
       win,
+      matchId,
     };
   });
 }
@@ -276,13 +279,13 @@ export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
   }
 
   const statHeaders = statsList.join(',');
-  const header = `Date,Side,Win,Rank,Name,Score,${statHeaders}\n`;
+  const header = `Match,Date,Side,Win,Rank,Name,Score,${statHeaders}\n`;
 
   const csvContent = rows
     .map((r) => {
       const statsFields = r.stats.map((s) => `"${s}"`).join(',');
       const winStr = r.win ? 'TRUE' : 'FALSE';
-      return `"${r.date}","${r.side}","${winStr}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
+      return `"${r.matchId}","${r.date}","${r.side}","${winStr}","${r.rank}","${r.name.replace(/"/g, '""')}","${r.score}",${statsFields}`;
     })
     .join('\n');
 
@@ -517,8 +520,19 @@ export async function runScoreboardParsing(
   stitchedPath: string,
   csvPath: string,
   fps: number,
-  startTime: Date = new Date()
+  startTime?: Date,
+  matchId: string = ''
 ): Promise<void> {
+  let matchTime = startTime;
+  if (!matchTime) {
+    try {
+      const stats = fs.statSync(videoPath);
+      matchTime = stats.mtime;
+    } catch (e) {
+      matchTime = new Date();
+    }
+  }
+
   const tempDir = path.join(process.cwd(), '.tmp');
   const framesDir = path.join(tempDir, 'frames');
   if (fs.existsSync(framesDir)) {
@@ -548,7 +562,7 @@ export async function runScoreboardParsing(
   console.log(`Victory Info resolved - Box Color: ${victoryInfo.victoryBoxColor}, Outcome: ${victoryInfo.isVictory ? 'Victory' : 'Defeat'}`);
 
   const rows = await extractScoreboardRows(stitchedPath);
-  const decorated = decorateScoreboardRows(rows, victoryInfo, startTime);
+  const decorated = decorateScoreboardRows(rows, victoryInfo, matchTime, matchId);
 
   console.log(`Writing structured data to CSV: ${csvPath}`);
   writeToCsv(decorated, csvPath);

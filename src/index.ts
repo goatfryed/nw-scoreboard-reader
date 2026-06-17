@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
 import { Command } from 'commander';
 import { downloadClip } from './twitch';
 import { runScoreboardParsing } from './scoreparser';
@@ -20,6 +21,30 @@ function getModeArg(): string {
   return 'opr1920';
 }
 
+function extractClipHash(clipUrl: string): string {
+  let slug = clipUrl;
+  try {
+    const urlObj = new URL(clipUrl);
+    const pathname = urlObj.pathname;
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length > 0) {
+      slug = segments[segments.length - 1];
+    }
+  } catch (e) {
+    // Not a valid URL, treat clipUrl itself as the slug
+  }
+
+  const firstHyphenIndex = slug.indexOf('-');
+  if (firstHyphenIndex !== -1) {
+    return slug.substring(firstHyphenIndex + 1);
+  }
+  return slug;
+}
+
+function generateRandomHash(): string {
+  return crypto.randomBytes(4).toString('hex');
+}
+
 const mode = getModeArg();
 dotenv.config({ path: '.env.local' });
 dotenv.config({ path: `.env.${mode}` });
@@ -37,7 +62,8 @@ program
   .argument('<clip-url>', 'Twitch clip URL to process in a single piped run')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .option('--append', 'Append rows to Google Sheet instead of replacing')
-  .action(async (clipUrl: string, options: { mode: string; append: boolean }) => {
+  .option('--match-id <id>', 'Specify a custom match ID')
+  .action(async (clipUrl: string, options: { mode: string; append: boolean; matchId?: string }) => {
     const startTime = new Date();
     try {
       configManager.loadConfig(options.mode);
@@ -50,9 +76,12 @@ program
         });
       }
 
+      const matchId = options.matchId || extractClipHash(clipUrl);
+
       console.log("NW Scoreboard Reader CLI - Full Pipeline");
       console.log("---------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
+      console.log(`Match ID: ${matchId}`);
       console.log(`Mode:     ${options.mode}`);
       console.log(`Append:   ${configManager.getConfig().upload.append}`);
 
@@ -89,7 +118,7 @@ program
       }
 
       console.log(`\n[2/3] Extracting, stitching, and parsing scoreboard frames...`);
-      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10), startTime);
+      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10), undefined, matchId);
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
       await uploadCsvToGoogleSheets(defaultCsvPath, configManager.getConfig());
@@ -147,13 +176,16 @@ program
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('--game-type <type>', 'Game type format: opr or war', process.env.GAME_TYPE || 'opr')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
-  .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string }) => {
+  .option('--match-id <id>', 'Specify a custom match ID (if omitted, a random 8-character hash will be generated)')
+  .action(async (options: { input: string; output: string; csv: string; fps: string; gameType: string; mode: string; matchId?: string }) => {
     const startTime = new Date();
     try {
       configManager.loadConfig(options.mode);
       if (options.gameType) {
         configManager.updateConfig({ type: options.gameType as 'opr' | 'war' });
       }
+
+      const matchId = options.matchId || generateRandomHash();
 
       console.log("NW Scoreboard Reader CLI - Parse & OCR");
       console.log("--------------------------------------");
@@ -163,6 +195,7 @@ program
       console.log(`FPS:          ${options.fps}`);
       console.log(`Game Type:    ${configManager.getConfig().type}`);
       console.log(`Mode:         ${options.mode}`);
+      console.log(`Match ID:     ${matchId}`);
 
       if (!fs.existsSync(options.input)) {
         throw new Error(`Input video file not found at: ${options.input}`);
@@ -174,7 +207,7 @@ program
         fs.rmSync(framesDir, { recursive: true, force: true });
       }
 
-      await runScoreboardParsing(options.input, options.output, options.csv, parseInt(options.fps, 10), startTime);
+      await runScoreboardParsing(options.input, options.output, options.csv, parseInt(options.fps, 10), undefined, matchId);
       console.log("OCR and CSV extraction completed!");
     } catch (err) {
       console.error("Parsing failed:", err);

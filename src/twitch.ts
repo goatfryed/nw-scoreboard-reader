@@ -54,10 +54,11 @@ interface GQLClipResponse {
   };
 }
 
-export async function getClipVideoUrl(slug: string): Promise<string> {
+export async function getClipMetadata(slug: string): Promise<{ videoUrl: string; createdAt: string }> {
   const query = `
     query($slug: ID!) {
       clip(slug: $slug) {
+        createdAt
         videoQualities {
           frameRate
           quality
@@ -98,6 +99,7 @@ export async function getClipVideoUrl(slug: string): Promise<string> {
 
   const json = (await response.json()) as any;
   const qualities = json.data?.clip?.videoQualities as VideoQuality[] | undefined;
+  const createdAt = json.data?.clip?.createdAt as string || '';
 
   if (!qualities || qualities.length === 0) {
     throw new Error(`No video qualities found for clip slug: ${slug}`);
@@ -116,7 +118,7 @@ export async function getClipVideoUrl(slug: string): Promise<string> {
   if (token) {
     finalUrl += `?sig=${token.signature}&token=${encodeURIComponent(token.value)}`;
   }
-  return finalUrl;
+  return { videoUrl: finalUrl, createdAt };
 }
 
 export function downloadFile(url: string, destPath: string): Promise<void> {
@@ -143,7 +145,7 @@ export async function downloadClip(url: string, destDir: string): Promise<string
   const slug = extractClipSlug(url);
   console.log(`Resolved clip slug: ${slug}`);
   
-  const videoUrl = await getClipVideoUrl(slug);
+  const { videoUrl, createdAt } = await getClipMetadata(slug);
   console.log(`Resolved direct MP4 URL: ${videoUrl}`);
   
   if (!fs.existsSync(destDir)) {
@@ -154,6 +156,12 @@ export async function downloadClip(url: string, destDir: string): Promise<string
   console.log(`Downloading video to: ${destPath}`);
   await downloadFile(videoUrl, destPath);
   console.log(`Download completed successfully!`);
+
+  if (createdAt) {
+    const dateObj = new Date(createdAt);
+    fs.utimesSync(destPath, dateObj, dateObj);
+    console.log(`Updated video file modification time to clip creation date: ${dateObj.toISOString()}`);
+  }
   
   return destPath;
 }
