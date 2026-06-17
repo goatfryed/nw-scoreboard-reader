@@ -20,13 +20,13 @@ runs:
       uses: pnpm/action-setup@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: 24
         cache: 'pnpm'
 
     - name: Cache APT packages
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: apt-cache
       with:
         path: /var/cache/apt/archives

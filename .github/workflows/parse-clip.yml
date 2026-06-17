@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Project Workspace
         uses: ./.github/actions/setup-project
@@ -38,7 +38,7 @@ jobs:
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
 
       - name: Upload Scoreboard Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: scoreboard-pipeline-results
           path: |
@@ -51,7 +51,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS: credentials.json
 
       - name: Upload Screenshot Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: spreadsheet-screenshots
           path: |
