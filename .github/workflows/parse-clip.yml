@@ -44,6 +44,7 @@ jobs:
           path: |
             .tmp/scoreboard.csv
             .tmp/stitched.png
+          include-hidden-files: true
 
       - name: Take screenshots
         run: pnpm start screenshot --mode "${{ inputs.mode }}"
@@ -56,3 +57,4 @@ jobs:
           name: spreadsheet-screenshots
           path: |
             .tmp/spreadsheet*.png
+          include-hidden-files: true

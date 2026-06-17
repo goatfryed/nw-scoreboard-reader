@@ -38,3 +38,4 @@ jobs:
           name: spreadsheet-screenshots
           path: |
             .tmp/spreadsheet*.png
+          include-hidden-files: true
