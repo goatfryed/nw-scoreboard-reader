@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.12.7",
     "ts-node": "^10.9.2",
@@ -23,8 +23,8 @@
     "dotenv": "^16.4.5",
     "fluent-ffmpeg": "^2.1.2",
     "googleapis": "^134.0.0",
-    "playwright": "^1.43.1",
     "sharp": "^0.35.1",
     "tesseract.js": "^5.0.5"
-  }
+  },
+  "packageManager": "pnpm@11.7.0+sha512.19cc852c120c7125760f2443ee6be0ca5b40f9f50598de1a09a1f177503e010e57c23c77646e01e761de59bf874fb22a3398c33ab9691fc13eb946b6f0f4d620"
 }
