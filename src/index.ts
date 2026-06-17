@@ -66,7 +66,10 @@ program
   .action(async (clipUrl: string, options: { mode: string; append: boolean; matchId?: string }) => {
     const startTime = new Date();
     try {
-      configManager.loadConfig(options.mode);
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
       if (options.append !== undefined) {
         configManager.updateConfig({
           upload: {
@@ -82,7 +85,7 @@ program
       console.log("---------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
       console.log(`Match ID: ${matchId}`);
-      console.log(`Mode:     ${options.mode}`);
+      console.log(`Mode:     ${activeMode}`);
       console.log(`Append:   ${configManager.getConfig().upload.append}`);
 
       const defaultVideoPath = '.tmp/clip.mp4';
@@ -139,7 +142,10 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (clipUrl: string, options: { output: string; mode: string }) => {
     try {
-      configManager.loadConfig(options.mode);
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
       console.log("NW Scoreboard Reader CLI - Clip Download");
       console.log("----------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
@@ -179,7 +185,10 @@ program
   .action(async (options: { input: string; output: string; csv: string; fps: string; mode: string; matchId?: string }) => {
     const startTime = new Date();
     try {
-      configManager.loadConfig(options.mode);
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
 
       const matchId = options.matchId || generateRandomHash();
 
@@ -190,7 +199,7 @@ program
       console.log(`CSV Output:   ${options.csv}`);
       console.log(`FPS:          ${options.fps}`);
       console.log(`Column Names: ${configManager.getConfig().columnNames.join(', ')}`);
-      console.log(`Mode:         ${options.mode}`);
+      console.log(`Mode:         ${activeMode}`);
       console.log(`Match ID:     ${matchId}`);
 
       if (!fs.existsSync(options.input)) {
@@ -220,7 +229,10 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (options: { csv: string; append: boolean; mode: string }) => {
     try {
-      configManager.loadConfig(options.mode);
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
       if (options.append !== undefined) {
         configManager.updateConfig({
           upload: {
@@ -249,7 +261,10 @@ program
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .action(async (options: { output: string; mode: string }) => {
     try {
-      configManager.loadConfig(options.mode);
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
 
       console.log("NW Scoreboard Reader CLI - Spreadsheet Screenshot");
       console.log("-----------------------------------------------");

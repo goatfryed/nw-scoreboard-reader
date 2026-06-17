@@ -29,6 +29,11 @@ export interface VictoryInfo {
   isVictory: boolean;
 }
 
+export function cleanPlayerName(name: string): string {
+  const trimRegex = /^[.:\-`´'©®™@\s~]+|[.:\-`´'©®™@\s~]+$/gi;
+  return name.replace(trimRegex, '').trim();
+}
+
 interface OcrLine {
   text: string;
   yCenter: number;
@@ -323,9 +328,9 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
 
     let whitelist: string | undefined;
     if (segment.type === 'number') {
-      whitelist = '0123456789,';
+      whitelist = '0123456789, ';
     } else if (segment.type === 'kda') {
-      whitelist = '0123456789/';
+      whitelist = '0123456789/ ';
     }
 
     const { lines } = await performSegmentOCR(colPath, segment.type, whitelist);
@@ -348,25 +353,31 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
   }
 
   const rows: ScoreboardRow[] = [];
-  const expectedStatsLength = Math.max(0, (config.columnNames?.length || 3) - 3);
 
   console.log(`Aligning columns using segment ${nameResult.segment.header || nameResult.segment.name || nameResultIndex} as name reference...`);
 
+  const columnNames = config.columnNames || [];
+  const rankIndex = columnNames.findIndex(c => c.toLowerCase() === 'rank');
+  const nameIndex = columnNames.findIndex(c => c.toLowerCase() === 'name');
+  const scoreIndex = columnNames.findIndex(c => c.toLowerCase() === 'score');
+
   for (const nameLine of nameResult.lines) {
     const yCenter = nameLine.yCenter;
-    const cleanedName = nameLine.text.trim().replace(/^[^a-zA-Z]+/, '').replace(/~+$/, '').trim();
-    if (!cleanedName) continue;
+    const cleanedName = cleanPlayerName(nameLine.text);
+    if (!cleanedName || !/[a-zA-Z0-9]/.test(cleanedName)) continue;
 
     const rgbY = Math.round(yCenter / preprocessedScale); 
     const side = detectSideColor(rgbY, rgbBuffer, rgbInfo.width, rgbInfo.height, rgbInfo.channels);
 
-    const row: ScoreboardRow = {
-      side,
-      rank: '0',
-      name: cleanedName,
-      score: '0',
-      stats: [],
-    };
+    const rowValues = new Array(columnNames.length).fill('');
+    const assigned = new Array(columnNames.length).fill(false);
+
+    if (nameIndex !== -1) {
+      rowValues[nameIndex] = cleanedName;
+      assigned[nameIndex] = true;
+    }
+
+    let matchedAnySegment = false;
 
     for (const res of segmentResults) {
       let bestLine: OcrLine | null = null;
@@ -381,23 +392,32 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
         }
       }
 
+      if (bestLine && res !== nameResult) {
+        matchedAnySegment = true;
+      }
+
       const segment = res.segment;
+      const segmentLabel = segment.header || segment.name;
+
       if (segment.type === 'number') {
         const cleanVal = bestLine ? bestLine.text.replace(/,/g, '').trim() : '';
         const parts = cleanVal.split(/\s+/).filter(Boolean);
 
-        if (segment.header || segment.name) {
-          if (parts.length > 1) {
-            console.warn(`[OCR Warning] Segment "${segment.header || segment.name}" expected 1 column, got ${parts.length}`);
-          }
-          const val = parts[0] || '0';
-          if (segment.name === 'rank') {
-            row.rank = val.replace(/[^\d]/g, '');
-          } else if (segment.header === 'score') {
-            row.score = val.replace(/[^\d]/g, '');
+        if (segmentLabel) {
+          const colIdx = columnNames.findIndex(c => c.toLowerCase() === segmentLabel.toLowerCase());
+          if (colIdx !== -1) {
+            rowValues[colIdx] = (parts[0] || '0').replace(/[^\d]/g, '');
+            assigned[colIdx] = true;
           }
         } else {
-          row.stats.push(...parts);
+          let partIndex = 0;
+          for (let idx = 0; idx < columnNames.length && partIndex < parts.length; idx++) {
+            if (!assigned[idx] && idx !== nameIndex) {
+              rowValues[idx] = parts[partIndex].replace(/[^\d]/g, '');
+              assigned[idx] = true;
+              partIndex++;
+            }
+          }
         }
       } else if (segment.type === 'kda') {
         const cleanVal = bestLine ? bestLine.text.replace(/[^0-9/]/g, '').trim() : '0/0/0';
@@ -405,18 +425,59 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
         const kills = parts[0] || '0';
         const deaths = parts[1] || '0';
         const assists = parts[2] || '0';
-        row.stats.push(kills, deaths, assists);
+
+        if (segmentLabel) {
+          const colIdx = columnNames.findIndex(c => c.toLowerCase() === segmentLabel.toLowerCase());
+          if (colIdx !== -1) {
+            const kdaVals = [kills, deaths, assists];
+            for (let k = 0; k < 3 && colIdx + k < columnNames.length; k++) {
+              rowValues[colIdx + k] = kdaVals[k];
+              assigned[colIdx + k] = true;
+            }
+          }
+        } else {
+          const kdaVals = [kills, deaths, assists];
+          let kIndex = 0;
+          for (let idx = 0; idx < columnNames.length && kIndex < 3; idx++) {
+            if (!assigned[idx] && idx !== nameIndex) {
+              rowValues[idx] = kdaVals[kIndex];
+              assigned[idx] = true;
+              kIndex++;
+            }
+          }
+        }
       }
     }
 
-    while (row.stats.length < expectedStatsLength) {
-      row.stats.push('0');
-    }
-    if (row.stats.length > expectedStatsLength) {
-      row.stats = row.stats.slice(0, expectedStatsLength);
+    if (segmentResults.length > 1 && !matchedAnySegment) {
+      console.log(`Discarding player name "${cleanedName}" as it could not be matched to any stats columns.`);
+      continue;
     }
 
-    rows.push(row);
+    for (let idx = 0; idx < columnNames.length; idx++) {
+      if (!assigned[idx]) {
+        rowValues[idx] = idx === nameIndex ? cleanedName : '0';
+      }
+    }
+
+    const rankVal = rankIndex !== -1 ? rowValues[rankIndex] : '0';
+    const nameVal = nameIndex !== -1 ? rowValues[nameIndex] : cleanedName;
+    const scoreVal = scoreIndex !== -1 ? rowValues[scoreIndex] : '0';
+
+    const statsVals: string[] = [];
+    for (let idx = 0; idx < columnNames.length; idx++) {
+      if (idx !== rankIndex && idx !== nameIndex && idx !== scoreIndex) {
+        statsVals.push(rowValues[idx]);
+      }
+    }
+
+    rows.push({
+      side,
+      rank: rankVal,
+      name: nameVal,
+      score: scoreVal,
+      stats: statsVals,
+    });
   }
 
   console.log(`Parsed ${rows.length} rows using segmented OCR.`);
@@ -468,17 +529,33 @@ export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
   const header = ['Match', 'Date', 'Side', 'Win', ...columnNames].join(',') + '\n';
   const expectedLength = 4 + columnNames.length;
 
+  const rankIndex = columnNames.findIndex(c => c.toLowerCase() === 'rank');
+  const nameIndex = columnNames.findIndex(c => c.toLowerCase() === 'name');
+  const scoreIndex = columnNames.findIndex(c => c.toLowerCase() === 'score');
+
   const csvContent = rows
     .map((r) => {
+      const values: string[] = [];
+      let statsIdx = 0;
+
+      for (let idx = 0; idx < columnNames.length; idx++) {
+        if (idx === rankIndex) {
+          values.push(r.rank);
+        } else if (idx === nameIndex) {
+          values.push(r.name);
+        } else if (idx === scoreIndex) {
+          values.push(r.score);
+        } else {
+          values.push(r.stats[statsIdx++] || '0');
+        }
+      }
+
       const rowData = [
         r.matchId,
         r.date,
         r.side,
         r.win ? 'TRUE' : 'FALSE',
-        r.rank,
-        r.name,
-        r.score,
-        ...r.stats
+        ...values
       ];
 
       if (rowData.length !== expectedLength) {
@@ -596,8 +673,9 @@ function parseRawOcrLines(
       stats = parts.slice(3).map(cleanStatsOnly);
     }
 
-    const cleanedName = name.replace(/^[^a-zA-Z]+/, '').replace(/~+$/, '').trim();
-    name = cleanedName || name;
+    const cleanedName = cleanPlayerName(name);
+    if (!cleanedName || !/[a-zA-Z0-9]/.test(cleanedName)) continue;
+    name = cleanedName;
 
     while (stats.length < expectedStatsLength) {
       stats.push('0');
