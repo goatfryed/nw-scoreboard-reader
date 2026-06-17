@@ -1,0 +1,46 @@
+name: 'Setup Scoreboard Reader Project'
+description: 'Checks out, validates config, sets up Node, pnpm caching, installs system and Node dependencies'
+inputs:
+  mode:
+    description: 'Processing Mode'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate Mode Configuration
+      shell: bash
+      run: |
+        CONFIG_FILE="config.${{ inputs.mode }}.json"
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "Error: Configuration file $CONFIG_FILE does not exist."
+          exit 1
+        fi
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: 'pnpm'
+
+    - name: Cache APT packages
+      uses: actions/cache@v4
+      id: apt-cache
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ runner.os }}-apt-ffmpeg-poppler-utils
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
+    - name: Install System Dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ffmpeg poppler-utils
+        sudo chown -R $USER /var/cache/apt/archives
+
+    - name: Install Node Dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -1,0 +1,40 @@
+name: Take Spreadsheet Screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Processing Mode (e.g. opr1920, zoo1920)'
+        required: true
+        type: string
+
+jobs:
+  run-screenshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Project Workspace
+        uses: ./.github/actions/setup-project
+        with:
+          mode: ${{ inputs.mode }}
+
+      - name: Create Credentials File
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > credentials.json
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+
+      - name: Take screenshots
+        run: pnpm start screenshot --mode "${{ inputs.mode }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials.json
+
+      - name: Upload Screenshot Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spreadsheet-screenshots
+          path: |
+            .tmp/spreadsheet*.png

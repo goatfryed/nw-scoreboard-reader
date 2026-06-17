@@ -52,17 +52,28 @@ This pipeline can be executed asynchronously using GitHub Actions. You can trigg
 
 ### Programmatic API Execution (curl)
 
-To trigger the pipeline via API, send a POST request to the GitHub dispatches endpoint:
+To trigger the full pipeline (clip processing + sheet updates + screenshots):
 
 ```bash
 curl -X POST \
   -H "Accept: application/vnd.github+json" \
   -H "Authorization: Bearer $GITHUB_PAT" \
-  https://api.github.com/repos/goatfryed/nw-scoreboard-reader/actions/workflows/pipeline.yml/dispatches \
+  https://api.github.com/repos/goatfryed/nw-scoreboard-reader/actions/workflows/parse-clip.yml/dispatches \
   -d '{"ref":"main","inputs":{"clip_url":"https://clips.twitch.tv/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2","mode":"<mode>"}}'
 ```
 
-where mode matches one of the available config files (opr1920, zoo1920)
+To run only the spreadsheet screenshot pipeline:
+
+```bash
+curl -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_PAT" \
+  https://api.github.com/repos/goatfryed/nw-scoreboard-reader/actions/workflows/screenshot.yml/dispatches \
+  -d '{"ref":"main","inputs":{"mode":"<mode>"}}'
+```
+
+Where `<mode>` matches one of the available config file names (e.g. `opr1920`, `zoo1920`).
+
 
 ### Outputs & Artifacts
 The workflow uploads two separate artifact bundles:
