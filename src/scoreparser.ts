@@ -361,10 +361,44 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
   const nameIndex = columnNames.findIndex(c => c.toLowerCase() === 'name');
   const scoreIndex = columnNames.findIndex(c => c.toLowerCase() === 'score');
 
-  for (const nameLine of nameResult.lines) {
-    const yCenter = nameLine.yCenter;
-    const cleanedName = cleanPlayerName(nameLine.text);
-    if (!cleanedName || !/[a-zA-Z0-9]/.test(cleanedName)) continue;
+  // Build candidate Y coordinates
+  const tolerance = config.scoreBox.yTolerance ?? 15;
+  const rowYCenters: number[] = [];
+
+  // Start with name segment lines
+  for (const line of nameResult.lines) {
+    rowYCenters.push(line.yCenter);
+  }
+
+  // Add lines from other segments if they are not close to existing Y centers
+  for (const res of segmentResults) {
+    if (res === nameResult) continue;
+    for (const line of res.lines) {
+      const exists = rowYCenters.some(y => Math.abs(y - line.yCenter) < tolerance);
+      if (!exists) {
+        rowYCenters.push(line.yCenter);
+      }
+    }
+  }
+
+  // Sort them vertically
+  rowYCenters.sort((a, b) => a - b);
+
+  for (const yCenter of rowYCenters) {
+    // Check if we have a valid name line at this Y center
+    let bestNameLine: OcrLine | null = null;
+    let minNameDiff = Infinity;
+    for (const line of nameResult.lines) {
+      const diff = Math.abs(line.yCenter - yCenter);
+      if (diff < tolerance && diff < minNameDiff) {
+        minNameDiff = diff;
+        bestNameLine = line;
+      }
+    }
+
+    const rawName = bestNameLine ? bestNameLine.text : '';
+    const cleanedName = cleanPlayerName(rawName);
+    const hasValidName = cleanedName && /[a-zA-Z0-9]/.test(cleanedName);
 
     const rgbY = Math.round(yCenter / preprocessedScale); 
     const side = detectSideColor(rgbY, rgbBuffer, rgbInfo.width, rgbInfo.height, rgbInfo.channels);
@@ -372,17 +406,11 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
     const rowValues = new Array(columnNames.length).fill('');
     const assigned = new Array(columnNames.length).fill(false);
 
-    if (nameIndex !== -1) {
-      rowValues[nameIndex] = cleanedName;
-      assigned[nameIndex] = true;
-    }
-
-    let matchedAnySegment = false;
+    let matchedAllNonName = true;
 
     for (const res of segmentResults) {
       let bestLine: OcrLine | null = null;
       let minDiff = Infinity;
-      const tolerance = config.scoreBox.yTolerance ?? 15;
 
       for (const line of res.lines) {
         const diff = Math.abs(line.yCenter - yCenter);
@@ -392,8 +420,10 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
         }
       }
 
-      if (bestLine && res !== nameResult) {
-        matchedAnySegment = true;
+      if (res !== nameResult) {
+        if (!bestLine || !bestLine.text.trim()) {
+          matchedAllNonName = false;
+        }
       }
 
       const segment = res.segment;
@@ -413,7 +443,7 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
           let partIndex = 0;
           for (let idx = 0; idx < columnNames.length && partIndex < parts.length; idx++) {
             if (!assigned[idx] && idx !== nameIndex) {
-              rowValues[idx] = parts[partIndex].replace(/[^\d]/g, '');
+              rowValues[idx] = (parts[partIndex] || '0').replace(/[^\d]/g, '');
               assigned[idx] = true;
               partIndex++;
             }
@@ -449,19 +479,32 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
       }
     }
 
-    if (segmentResults.length > 1 && !matchedAnySegment) {
-      console.log(`Discarding player name "${cleanedName}" as it could not be matched to any stats columns.`);
-      continue;
+    // Determine target name value
+    let finalName = 'unknown';
+    if (hasValidName) {
+      finalName = cleanedName;
+    } else {
+      // If we don't have a valid name, we only keep this row if we matched all other columns
+      if (segmentResults.length > 1 && !matchedAllNonName) {
+        console.log(`Discarding row at Y=${yCenter} because it has no valid player name and is missing stats in some columns.`);
+        continue;
+      }
+      console.log(`Row at Y=${yCenter} has no valid player name but contains stats in all columns. Including as "unknown".`);
+    }
+
+    if (nameIndex !== -1) {
+      rowValues[nameIndex] = finalName;
+      assigned[nameIndex] = true;
     }
 
     for (let idx = 0; idx < columnNames.length; idx++) {
       if (!assigned[idx]) {
-        rowValues[idx] = idx === nameIndex ? cleanedName : '0';
+        rowValues[idx] = idx === nameIndex ? finalName : '0';
       }
     }
 
     const rankVal = rankIndex !== -1 ? rowValues[rankIndex] : '0';
-    const nameVal = nameIndex !== -1 ? rowValues[nameIndex] : cleanedName;
+    const nameVal = nameIndex !== -1 ? rowValues[nameIndex] : finalName;
     const scoreVal = scoreIndex !== -1 ? rowValues[scoreIndex] : '0';
 
     const statsVals: string[] = [];

@@ -14,7 +14,7 @@
     "top": 360,
     "right": 1672,
     "bottom": 854,
-    "threshold": 100,
+    "threshold": 125,
     "yTolerance": 25,
     "segments": [
       {
@@ -56,7 +56,7 @@
     "append": false
   },
   "screenshot": [
-    "277259394:A1:Q83",
+    "277259394:A1:Q93",
     "1319905456:A1:N39"
   ]
 }
