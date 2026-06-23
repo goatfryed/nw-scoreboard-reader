@@ -37,10 +37,10 @@
     ]
   },
   "victoryBox": {
-    "left": 270,
-    "top": 360,
-    "right": 445,
-    "bottom": 425,
+    "left": 237,
+    "top": 368,
+    "right": 600,
+    "bottom": 485,
     "threshold": 95
   },
   "headerBox": {
@@ -57,6 +57,6 @@
   },
   "screenshot": [
     "277259394:A1:Q93",
-    "1319905456:A1:N39"
+    "277259394:Q1:AD39"
   ]
 }

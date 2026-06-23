@@ -41,7 +41,8 @@ export async function captureSpreadsheetScreenshot(outputPath: string, options: 
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  for (const cfg of configs) {
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
     const gidParam = cfg.gid;
     const range = cfg.range;
 
@@ -62,7 +63,7 @@ export async function captureSpreadsheetScreenshot(outputPath: string, options: 
     // Determine target output path for this specific screenshot
     let targetOutputPath = outputPath;
     if (configs.length > 1) {
-      targetOutputPath = path.join(parsedPath.dir, `${parsedPath.name}_${gidParam}${parsedPath.ext}`);
+      targetOutputPath = path.join(parsedPath.dir, `${parsedPath.name}_${i + 1}${parsedPath.ext}`);
     }
 
     console.log(`\nProcessing GID "${gidParam}" (resolved: ${resolvedGid}) for range ${range}...`);
