@@ -23,6 +23,19 @@ export interface EraseConfig {
   right: number;
 }
 
+export interface GameScoreBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  threshold?: number;
+}
+
+export interface GameScoreBoxesConfig {
+  topTeam: GameScoreBox;
+  bottomTeam: GameScoreBox;
+}
+
 export interface ReaderOptions {
   columnNames: string[];
   scoreBox: ScoreBox;
@@ -30,6 +43,7 @@ export interface ReaderOptions {
   headerBox?: ScoreBox;
   erase: EraseConfig;
   threshold?: number;
+  gameScoreBoxes?: GameScoreBoxesConfig;
 }
 
 export interface UploadOptions {
@@ -137,6 +151,22 @@ class ConfigManager {
             append: jsonConfig.upload?.append ?? defaults.upload.append,
           },
           screenshot: jsonConfig.screenshot ?? defaults.screenshot,
+          gameScoreBoxes: jsonConfig.gameScoreBoxes ? {
+            topTeam: {
+              left: jsonConfig.gameScoreBoxes.topTeam.left,
+              top: jsonConfig.gameScoreBoxes.topTeam.top,
+              right: jsonConfig.gameScoreBoxes.topTeam.right,
+              bottom: jsonConfig.gameScoreBoxes.topTeam.bottom,
+              threshold: jsonConfig.gameScoreBoxes.topTeam.threshold,
+            },
+            bottomTeam: {
+              left: jsonConfig.gameScoreBoxes.bottomTeam.left,
+              top: jsonConfig.gameScoreBoxes.bottomTeam.top,
+              right: jsonConfig.gameScoreBoxes.bottomTeam.right,
+              bottom: jsonConfig.gameScoreBoxes.bottomTeam.bottom,
+              threshold: jsonConfig.gameScoreBoxes.bottomTeam.threshold,
+            }
+          } : undefined,
         };
       } catch (err) {
         console.error(`Failed to parse config file: ${configPath}. Using fallbacks.`, err);
@@ -168,6 +198,7 @@ class ConfigManager {
       headerBox: overrides.headerBox ? { ...config.headerBox, ...overrides.headerBox } : config.headerBox,
       erase: overrides.erase ? { ...config.erase, ...overrides.erase } : config.erase,
       upload: overrides.upload ? { ...config.upload, ...overrides.upload } : config.upload,
+      gameScoreBoxes: overrides.gameScoreBoxes !== undefined ? (config.gameScoreBoxes ? { ...config.gameScoreBoxes, ...overrides.gameScoreBoxes } as GameScoreBoxesConfig : overrides.gameScoreBoxes) : config.gameScoreBoxes,
     };
   }
 }

@@ -22,6 +22,7 @@ export interface DecoratedRow extends ScoreboardRow {
   date: string;
   win: boolean;
   matchId: string;
+  gameScore?: string;
 }
 
 export interface VictoryInfo {
@@ -209,6 +210,84 @@ export async function parseVictoryInfo(firstFramePath: string): Promise<VictoryI
     console.error('Error extracting victory side:', err);
     return { victoryBoxColor: 'unknown', isVictory: true };
   }
+}
+
+/**
+ * Reads the game score boxes from the initial frame and resolves the scores.
+ */
+export async function parseGameScores(
+  firstFramePath: string
+): Promise<{ topTeamScore: number; bottomTeamScore: number } | null> {
+  const config = configManager.getConfig();
+  if (!config.gameScoreBoxes) {
+    return null;
+  }
+
+  const { topTeam, bottomTeam } = config.gameScoreBoxes;
+
+  const parseBox = async (
+    box: typeof topTeam,
+    name: 'top' | 'bottom'
+  ): Promise<number> => {
+    const width = box.right - box.left;
+    const height = box.bottom - box.top;
+
+    if (width <= 0 || height <= 0) {
+      return 0;
+    }
+
+    // 1. Save crop for debug
+    try {
+      await sharp(firstFramePath)
+        .extract({
+          left: box.left,
+          top: box.top,
+          width,
+          height
+        })
+        .png()
+        .toFile(path.join(process.cwd(), '.tmp', `crop-game-score-${name}.png`));
+    } catch (err) {
+      console.error(`Failed to write crop-game-score-${name}.png:`, err);
+    }
+
+    // 2. Preprocess and OCR
+    const thresholdVal = box.threshold ?? config.threshold ?? 160;
+    const croppedBuffer = await sharp(firstFramePath)
+      .extract({
+        left: box.left,
+        top: box.top,
+        width,
+        height
+      })
+      .resize({ width: width * 2, kernel: 'cubic' })
+      .grayscale()
+      .negate({ alpha: false })
+      .threshold(thresholdVal)
+      .withMetadata({ density: 300 })
+      .png()
+      .toBuffer();
+
+    const tempPath = path.join(process.cwd(), '.tmp', `ocr-game-score-${name}.png`);
+    await fs.promises.writeFile(tempPath, croppedBuffer);
+
+    const worker = await createWorker('eng');
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789',
+    });
+    const { data } = await worker.recognize(tempPath);
+    await worker.terminate();
+
+    const text = data.text.trim();
+    console.log(`Game Score Box (${name}) OCR text: "${text}"`);
+    const parsed = parseInt(text.replace(/[^\d]/g, ''), 10);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const topTeamScore = await parseBox(topTeam, 'top');
+  const bottomTeamScore = await parseBox(bottomTeam, 'bottom');
+
+  return { topTeamScore, bottomTeamScore };
 }
 
 /**
@@ -534,7 +613,8 @@ export function decorateScoreboardRows(
   rows: ScoreboardRow[],
   victoryInfo: VictoryInfo,
   startTime: Date,
-  matchId: string
+  matchId: string,
+  gameScores?: { topTeamScore: number; bottomTeamScore: number } | null
 ): DecoratedRow[] {
   const dateStr = formatDateTime(startTime);
   const { victoryBoxColor, isVictory } = victoryInfo;
@@ -548,11 +628,24 @@ export function decorateScoreboardRows(
         win = !isVictory;
       }
     }
+
+    let gameScore: string | undefined;
+    if (gameScores) {
+      if (victoryBoxColor !== 'unknown') {
+        if (r.side === victoryBoxColor) {
+          gameScore = String(gameScores.topTeamScore);
+        } else if (r.side !== 'unknown' && r.side !== 'neutral') {
+          gameScore = String(gameScores.bottomTeamScore);
+        }
+      }
+    }
+
     return {
       ...r,
       date: dateStr,
       win,
       matchId,
+      ...(gameScore !== undefined ? { gameScore } : {}),
     };
   });
 }
@@ -563,14 +656,19 @@ export function decorateScoreboardRows(
 export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
   const config = configManager.getConfig();
   const columnNames = config.columnNames || [];
+  const hasGameScore = !!config.gameScoreBoxes;
 
   const outDir = path.dirname(csvOutputPath);
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  const header = ['Match', 'Date', 'Side', 'Win', ...columnNames].join(',') + '\n';
-  const expectedLength = 4 + columnNames.length;
+  const headerParts = ['Match', 'Date', 'Side', 'Win', ...columnNames];
+  if (hasGameScore) {
+    headerParts.push('Game Score');
+  }
+  const header = headerParts.join(',') + '\n';
+  const expectedLength = headerParts.length;
 
   const rankIndex = columnNames.findIndex(c => c.toLowerCase() === 'rank');
   const nameIndex = columnNames.findIndex(c => c.toLowerCase() === 'name');
@@ -600,6 +698,10 @@ export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
         r.win ? 'TRUE' : 'FALSE',
         ...values
       ];
+
+      if (hasGameScore) {
+        rowData.push(r.gameScore || '0');
+      }
 
       if (rowData.length !== expectedLength) {
         console.warn(`[CSV Warning] Row column count (${rowData.length}) does not match expected header count (${expectedLength}) for player "${r.name}"`);
@@ -845,14 +947,21 @@ export async function runScoreboardParsing(
   console.log(`Analyzing victory side...`);
   const victoryInfoPromise = parseVictoryInfo(frames[0]);
 
+  const gameScoresPromise = parseGameScores(frames[0]);
+
   console.log(`Stitching frames into ${stitchedPath}...`);
   await cropAndStitchFrames(frames, stitchedPath);
 
   const victoryInfo = await victoryInfoPromise;
   console.log(`Victory Info resolved - Box Color: ${victoryInfo.victoryBoxColor}, Outcome: ${victoryInfo.isVictory ? 'Victory' : 'Defeat'}`);
 
+  const gameScores = await gameScoresPromise;
+  if (gameScores) {
+    console.log(`Game Scores resolved - Top Team: ${gameScores.topTeamScore}, Bottom Team: ${gameScores.bottomTeamScore}`);
+  }
+
   const rows = await extractScoreboardRows(stitchedPath);
-  const decorated = decorateScoreboardRows(rows, victoryInfo, matchTime, matchId);
+  const decorated = decorateScoreboardRows(rows, victoryInfo, matchTime, matchId, gameScores);
 
   console.log(`Writing structured data to CSV: ${csvPath}`);
   writeToCsv(decorated, csvPath);

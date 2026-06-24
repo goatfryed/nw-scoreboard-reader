@@ -65,5 +65,21 @@
   "upload": {
     "range": "'scoreboards'!A2:L",
     "append": true
+  },
+  "gameScoreBoxes": {
+    "topTeam": {
+      "left": 290,
+      "top": 475,
+      "right": 410,
+      "bottom": 535,
+      "threshold": 115
+    },
+    "bottomTeam": {
+      "left": 290,
+      "top": 865,
+      "right": 410,
+      "bottom": 925,
+      "threshold": 115
+    }
   }
 }
