@@ -101,7 +101,7 @@ export async function filterScoreboardFrames(frames: string[]): Promise<string[]
 
       const text = data.text.toLowerCase();
       const isMatch = text.includes('all') || text.includes('allies') || text.includes('enemies') ||
-                      text.includes('alli') || text.includes('enem');
+        text.includes('alli') || text.includes('enem');
 
       if (isMatch) {
         validFrames.push(framePath);
@@ -479,7 +479,7 @@ export async function extractScoreboardRows(imagePath: string): Promise<Scoreboa
     const cleanedName = cleanPlayerName(rawName);
     const hasValidName = cleanedName && /[a-zA-Z0-9]/.test(cleanedName);
 
-    const rgbY = Math.round(yCenter / preprocessedScale); 
+    const rgbY = Math.round(yCenter / preprocessedScale);
     const side = detectSideColor(rgbY, rgbBuffer, rgbInfo.width, rgbInfo.height, rgbInfo.channels);
 
     const rowValues = new Array(columnNames.length).fill('');
@@ -665,7 +665,7 @@ export function writeToCsv(rows: DecoratedRow[], csvOutputPath: string): void {
 
   const headerParts = ['Match', 'Date', 'Side', 'Win', ...columnNames];
   if (hasGameScore) {
-    headerParts.push('Game Score');
+    headerParts.push('GameScore');
   }
   const header = headerParts.join(',') + '\n';
   const expectedLength = headerParts.length;
