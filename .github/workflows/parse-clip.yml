@@ -48,6 +48,7 @@ jobs:
           path: |
             .tmp/scoreboard.csv
             .tmp/scoreboard.png
+            .tmp/meta.json
           include-hidden-files: true
 
       - name: Take screenshots
