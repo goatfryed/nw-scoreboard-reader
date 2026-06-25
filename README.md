@@ -37,13 +37,13 @@ Create a `config.{mode}.json` file specifying crop coordinates, frame rates, and
 Run the pipeline by passing a Twitch clip URL:
 
 ```bash
-pnpm start https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2
+pnpm cli https://www.twitch.tv/goatfryed/clip/FancyBoxyGorillaCharlieBitMe-_sP2n_BFm8cLvTZ2
 ```
 
 For more Details and plumbing commands see
 
 ```bash
-pnpm start --help
+pnpm cli --help
 ```
 
 ## GitHub Actions Dispatch API

@@ -28,7 +28,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
 
       - name: Take screenshots
-        run: pnpm start screenshot --mode "${{ inputs.mode }}"
+        run: pnpm cli screenshot --mode "${{ inputs.mode }}"
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials.json
 

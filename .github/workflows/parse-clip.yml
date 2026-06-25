@@ -32,7 +32,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
 
       - name: Convert twitch clip to google sheets
-        run: pnpm start "${{ inputs.clip_url }}" --mode "${{ inputs.mode }}"
+        run: pnpm cli "${{ inputs.clip_url }}" --mode "${{ inputs.mode }}"
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials.json
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
@@ -47,7 +47,7 @@ jobs:
           include-hidden-files: true
 
       - name: Take screenshots
-        run: pnpm start screenshot --mode "${{ inputs.mode }}"
+        run: pnpm cli screenshot --mode "${{ inputs.mode }}"
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials.json
 
