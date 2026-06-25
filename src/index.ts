@@ -1,12 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
-import * as crypto from 'crypto';
 import { Command } from 'commander';
-import { downloadClip } from './twitch';
+import { downloadClip, extractClipSlug, getClipMetadata } from './twitch';
 import { runScoreboardParsing } from './scoreparser';
 import { uploadCsvToGoogleSheets, captureSpreadsheetScreenshot } from './sheets';
 import { configManager } from './config';
+import { loadMetadata, saveMetadata, extractClipHash, Metadata } from './metadata';
 
 function getModeArg(): string {
   for (let i = 0; i < process.argv.length; i++) {
@@ -21,29 +21,7 @@ function getModeArg(): string {
   return 'opr1920';
 }
 
-function extractClipHash(clipUrl: string): string {
-  let slug = clipUrl;
-  try {
-    const urlObj = new URL(clipUrl);
-    const pathname = urlObj.pathname;
-    const segments = pathname.split('/').filter(Boolean);
-    if (segments.length > 0) {
-      slug = segments[segments.length - 1];
-    }
-  } catch (e) {
-    // Not a valid URL, treat clipUrl itself as the slug
-  }
-
-  const firstHyphenIndex = slug.indexOf('-');
-  if (firstHyphenIndex !== -1) {
-    return slug.substring(firstHyphenIndex + 1);
-  }
-  return slug;
-}
-
-function generateRandomHash(): string {
-  return crypto.randomBytes(4).toString('hex');
-}
+// Metadata helpers are imported from './metadata'
 
 const mode = getModeArg();
 dotenv.config({ path: '.env.local' });
@@ -62,9 +40,7 @@ program
   .argument('<clip-url>', 'Twitch clip URL to process in a single piped run')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
   .option('--append', 'Append rows to Google Sheet instead of replacing')
-  .option('--match-id <id>', 'Specify a custom match ID')
-  .action(async (clipUrl: string, options: { mode: string; append: boolean; matchId?: string }) => {
-    const startTime = new Date();
+  .action(async (clipUrl: string, options: { mode: string; append: boolean }) => {
     try {
       const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
       if (activeMode !== mode) {
@@ -79,12 +55,9 @@ program
         });
       }
 
-      const matchId = options.matchId || extractClipHash(clipUrl);
-
       console.log("NW Scoreboard Reader CLI - Full Pipeline");
       console.log("---------------------------------------");
       console.log(`Clip URL: ${clipUrl}`);
-      console.log(`Match ID: ${matchId}`);
       console.log(`Mode:     ${activeMode}`);
       console.log(`Append:   ${configManager.getConfig().upload.append}`);
 
@@ -93,12 +66,12 @@ program
       const defaultCsvPath = process.env.CSV_PATH || '.tmp/scoreboard.csv';
       const defaultFps = process.env.FPS || '2';
 
-      console.log(`\n[1/3] Downloading clip...`);
+      console.log(`\n[0/3] Preparing metadata...`);
       const tempDir = path.join(process.cwd(), '.tmp');
       if (fs.existsSync(tempDir)) {
         for (const file of fs.readdirSync(tempDir)) {
           const filePath = path.join(tempDir, file);
-          if (file.endsWith('.mp4') || file === 'frames') {
+          if (file.endsWith('.mp4') || file === 'frames' || file === 'meta.json') {
             fs.rmSync(filePath, { recursive: true, force: true });
           }
         }
@@ -106,6 +79,20 @@ program
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
+      const slug = extractClipSlug(clipUrl);
+      const gqlMeta = await getClipMetadata(slug);
+      const matchId = extractClipHash(clipUrl);
+      const gameDate = gqlMeta.streamedAt || gqlMeta.createdAt;
+
+      const metadata: Metadata = {
+        clipUrl,
+        clipId: slug,
+        matchId,
+        gameDate,
+      };
+      saveMetadata(metadata);
+
+      console.log(`\n[1/3] Downloading clip...`);
       const downloadedPath = await downloadClip(clipUrl, tempDir);
       if (downloadedPath !== defaultVideoPath) {
         if (fs.existsSync(defaultVideoPath)) {
@@ -114,14 +101,8 @@ program
         fs.renameSync(downloadedPath, defaultVideoPath);
       }
 
-      console.log(`\n[2/3] Extracting and stitching frames...`);
-      const framesDir = path.join(tempDir, 'frames');
-      if (fs.existsSync(framesDir)) {
-        fs.rmSync(framesDir, { recursive: true, force: true });
-      }
-
       console.log(`\n[2/3] Extracting, stitching, and parsing scoreboard frames...`);
-      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10), undefined, matchId);
+      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10));
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
       await uploadCsvToGoogleSheets(defaultCsvPath, configManager.getConfig());
@@ -133,22 +114,76 @@ program
     }
   });
 
-// Subcommand: clip
+// Subcommand: prepare
 program
-  .command('clip')
-  .description('Download Twitch clip by URL')
+  .command('prepare')
+  .description('Prepare necessary metadata and write to meta.json')
   .argument('<clip-url>', 'Twitch clip URL (e.g. https://clips.twitch.tv/...)')
-  .option('-o, --output <path>', 'Output video path', '.tmp/clip.mp4')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
-  .action(async (clipUrl: string, options: { output: string; mode: string }) => {
+  .option('--match-id <id>', 'Specify a custom match ID')
+  .action(async (clipUrl: string, options: { mode: string; matchId?: string }) => {
     try {
       const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
       if (activeMode !== mode) {
         configManager.loadConfig(activeMode);
       }
+
+      console.log("NW Scoreboard Reader CLI - Prepare Metadata");
+      console.log("-----------------------------------------");
+      console.log(`Clip URL: ${clipUrl}`);
+
+      const slug = extractClipSlug(clipUrl);
+      console.log(`Fetching clip metadata from Twitch GQL for slug: ${slug}...`);
+      const gqlMeta = await getClipMetadata(slug);
+
+      const matchId = options.matchId || extractClipHash(clipUrl);
+      const gameDate = gqlMeta.streamedAt || gqlMeta.createdAt;
+
+      const metadata: Metadata = {
+        clipUrl,
+        clipId: slug,
+        matchId,
+        gameDate,
+      };
+
+      saveMetadata(metadata);
+      console.log(`Metadata prepared successfully:`);
+      console.log(JSON.stringify(metadata, null, 2));
+    } catch (err) {
+      console.error("Metadata preparation failed:", err);
+      process.exit(1);
+    }
+  });
+
+// Subcommand: clip
+program
+  .command('clip')
+  .description('Download Twitch clip by URL')
+  .argument('[clip-url]', 'Twitch clip URL (e.g. https://clips.twitch.tv/...)')
+  .option('-o, --output <path>', 'Output video path', '.tmp/clip.mp4')
+  .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
+  .action(async (clipUrl: string | undefined, options: { output: string; mode: string }) => {
+    try {
+      const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
+      if (activeMode !== mode) {
+        configManager.loadConfig(activeMode);
+      }
+
+      let targetUrl = clipUrl;
+      if (!targetUrl) {
+        const metadata = loadMetadata();
+        if (metadata && metadata.clipUrl) {
+          targetUrl = metadata.clipUrl;
+          console.log(`Using clip URL from metadata: ${targetUrl}`);
+        } else {
+          console.error("Error: Please provide a clip-url or run the prepare command first.");
+          process.exit(1);
+        }
+      }
+
       console.log("NW Scoreboard Reader CLI - Clip Download");
       console.log("----------------------------------------");
-      console.log(`Clip URL: ${clipUrl}`);
+      console.log(`Clip URL: ${targetUrl}`);
       console.log(`Output:   ${options.output}`);
 
       const destDir = path.dirname(options.output);
@@ -157,7 +192,7 @@ program
       }
 
       const tempDir = path.join(process.cwd(), '.tmp');
-      const downloadedPath = await downloadClip(clipUrl, tempDir);
+      const downloadedPath = await downloadClip(targetUrl, tempDir);
 
       if (downloadedPath !== options.output) {
         if (fs.existsSync(options.output)) {
@@ -181,16 +216,12 @@ program
   .option('--csv <path>', 'Output CSV file path', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
-  .option('--match-id <id>', 'Specify a custom match ID (if omitted, a random 8-character hash will be generated)')
-  .action(async (options: { input: string; output: string; csv: string; fps: string; mode: string; matchId?: string }) => {
-    const startTime = new Date();
+  .action(async (options: { input: string; output: string; csv: string; fps: string; mode: string }) => {
     try {
       const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
       if (activeMode !== mode) {
         configManager.loadConfig(activeMode);
       }
-
-      const matchId = options.matchId || generateRandomHash();
 
       console.log("NW Scoreboard Reader CLI - Parse & OCR");
       console.log("--------------------------------------");
@@ -200,7 +231,6 @@ program
       console.log(`FPS:          ${options.fps}`);
       console.log(`Column Names: ${configManager.getConfig().columnNames.join(', ')}`);
       console.log(`Mode:         ${activeMode}`);
-      console.log(`Match ID:     ${matchId}`);
 
       if (!fs.existsSync(options.input)) {
         throw new Error(`Input video file not found at: ${options.input}`);
@@ -212,7 +242,7 @@ program
         fs.rmSync(framesDir, { recursive: true, force: true });
       }
 
-      await runScoreboardParsing(options.input, options.output, options.csv, parseInt(options.fps, 10), undefined, matchId);
+      await runScoreboardParsing(options.input, options.output, options.csv, parseInt(options.fps, 10));
       console.log("OCR and CSV extraction completed!");
     } catch (err) {
       console.error("Parsing failed:", err);

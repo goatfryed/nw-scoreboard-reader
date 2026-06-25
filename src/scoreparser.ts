@@ -6,6 +6,7 @@ import convert from 'color-convert';
 import { configManager, ReaderOptions } from './config';
 import { extractFrames } from './ffmpeg';
 import { cropAndStitchFrames } from './stitch';
+import { loadMetadata, generateRandomHash } from './metadata';
 
 export { ReaderOptions };
 
@@ -911,18 +912,28 @@ export async function runScoreboardParsing(
   videoPath: string,
   stitchedPath: string,
   csvPath: string,
-  fps: number,
-  startTime?: Date,
-  matchId: string = ''
+  fps: number
 ): Promise<void> {
-  let matchTime = startTime;
-  if (!matchTime) {
+  const meta = loadMetadata();
+
+  let matchTime: Date;
+  if (meta && meta.gameDate) {
+    matchTime = new Date(meta.gameDate);
+  } else {
     try {
       const stats = fs.statSync(videoPath);
       matchTime = stats.mtime;
     } catch (e) {
       matchTime = new Date();
     }
+  }
+
+  let finalMatchId = '';
+  if (meta && meta.matchId) {
+    finalMatchId = meta.matchId;
+  } else {
+    finalMatchId = generateRandomHash();
+    console.log(`No match ID in metadata. Generated random match ID: ${finalMatchId}`);
   }
 
   const tempDir = path.join(process.cwd(), '.tmp');
@@ -961,7 +972,7 @@ export async function runScoreboardParsing(
   }
 
   const rows = await extractScoreboardRows(stitchedPath);
-  const decorated = decorateScoreboardRows(rows, victoryInfo, matchTime, matchId, gameScores);
+  const decorated = decorateScoreboardRows(rows, victoryInfo, matchTime, finalMatchId, gameScores);
 
   console.log(`Writing structured data to CSV: ${csvPath}`);
   writeToCsv(decorated, csvPath);
