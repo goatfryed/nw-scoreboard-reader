@@ -7,6 +7,7 @@ import { runScoreboardParsing } from './scoreparser';
 import { uploadCsvToGoogleSheets, captureSpreadsheetScreenshot } from './sheets';
 import { configManager } from './config';
 import { loadMetadata, saveMetadata, extractClipHash, Metadata } from './metadata';
+import { uploadToS3 } from './s3';
 
 function getModeArg(): string {
   for (let i = 0; i < process.argv.length; i++) {
@@ -62,7 +63,7 @@ program
       console.log(`Append:   ${configManager.getConfig().upload.append}`);
 
       const defaultVideoPath = '.tmp/clip.mp4';
-      const defaultStitchedPath = '.tmp/stitched.png';
+      const defaultScoreboardPath = '.tmp/scoreboard.png';
       const defaultCsvPath = process.env.CSV_PATH || '.tmp/scoreboard.csv';
       const defaultFps = process.env.FPS || '2';
 
@@ -102,10 +103,19 @@ program
       }
 
       console.log(`\n[2/3] Extracting, stitching, and parsing scoreboard frames...`);
-      await runScoreboardParsing(defaultVideoPath, defaultStitchedPath, defaultCsvPath, parseInt(defaultFps, 10));
+      await runScoreboardParsing(defaultVideoPath, defaultScoreboardPath, defaultCsvPath, parseInt(defaultFps, 10));
 
       console.log(`\n[3/3] Uploading CSV to Google Sheets...`);
       await uploadCsvToGoogleSheets(defaultCsvPath, configManager.getConfig());
+
+      console.log(`\n[3/3] Uploading to S3 bucket...`);
+      const metadataResult = loadMetadata();
+      const matchIdResult = metadataResult?.matchId;
+      if (matchIdResult) {
+        await uploadToS3(matchIdResult, defaultScoreboardPath, '.tmp/meta.json');
+      } else {
+        console.warn("S3 Upload Warning: No matchId found in metadata. Skipping S3 upload.");
+      }
 
       console.log("\nPipeline execution complete!");
     } catch (err) {
@@ -212,7 +222,7 @@ program
   .command('parse')
   .description('Extract frames, stitch scoreboard, and run OCR to CSV')
   .option('-i, --input <path>', 'Input video path', '.tmp/clip.mp4')
-  .option('-o, --output <path>', 'Stitched image output path', '.tmp/stitched.png')
+  .option('-o, --output <path>', 'Stitched image output path', '.tmp/scoreboard.png')
   .option('--csv <path>', 'Output CSV file path', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--fps <number>', 'Frame extraction rate per second', process.env.FPS || '2')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
@@ -253,11 +263,12 @@ program
 // Subcommand: upload
 program
   .command('upload')
-  .description('Upload scoreboard CSV data to Google Sheets')
+  .description('Upload scoreboard CSV data to Google Sheets & S3 bucket')
+  .argument('[group]', 'The upload target group: sheets, s3 (if omitted, uploads to both)')
   .option('--csv <path>', 'CSV file path to upload', process.env.CSV_PATH || '.tmp/scoreboard.csv')
   .option('--append', 'Append rows to Google Sheet instead of replacing')
   .option('-m, --mode <name>', 'Mode settings to load from .env.$MODE', 'opr1920')
-  .action(async (options: { csv: string; append: boolean; mode: string }) => {
+  .action(async (group: string | undefined, options: { csv: string; append: boolean; mode: string }) => {
     try {
       const activeMode = options.mode && options.mode !== 'opr1920' ? options.mode : mode;
       if (activeMode !== mode) {
@@ -272,11 +283,33 @@ program
         });
       }
 
-      console.log("NW Scoreboard Reader CLI - Google Sheets Upload");
-      console.log("-----------------------------------------------");
-      console.log(`CSV Path: ${options.csv}`);
-      console.log(`Append:   ${configManager.getConfig().upload.append}`);
-      await uploadCsvToGoogleSheets(options.csv, configManager.getConfig());
+      if (group && group !== 'sheets' && group !== 's3') {
+        console.error(`Error: Invalid upload group "${group}". Supported groups are: sheets, s3.`);
+        process.exit(1);
+      }
+
+      const uploadSheets = !group || group === 'sheets';
+      const uploadS3 = !group || group === 's3';
+
+      if (uploadSheets) {
+        console.log("NW Scoreboard Reader CLI - Google Sheets Upload");
+        console.log("-----------------------------------------------");
+        console.log(`CSV Path: ${options.csv}`);
+        console.log(`Append:   ${configManager.getConfig().upload.append}`);
+        await uploadCsvToGoogleSheets(options.csv, configManager.getConfig());
+      }
+
+      if (uploadS3) {
+        console.log("NW Scoreboard Reader CLI - S3 Upload");
+        console.log("------------------------------------");
+        const metadata = loadMetadata();
+        const matchId = metadata?.matchId;
+        if (matchId) {
+          await uploadToS3(matchId, '.tmp/scoreboard.png', '.tmp/meta.json');
+        } else {
+          console.warn("S3 Upload Warning: No matchId found in metadata. Skipping S3 upload.");
+        }
+      }
     } catch (err) {
       console.error("Upload failed:", err);
       process.exit(1);

@@ -77,5 +77,5 @@ Where `<mode>` matches one of the available config file names (e.g. `opr1920`, `
 
 ### Outputs & Artifacts
 The workflow uploads two separate artifact bundles:
-- `scoreboard-pipeline-results`: Contains the parsed scoreboard data (`scoreboard.csv`) and the vertically-stitched image (`stitched.png`).
+- `scoreboard-pipeline-results`: Contains the parsed scoreboard data (`scoreboard.csv`) and the vertically-stitched image (`scoreboard.png`).
 - `spreadsheet-screenshots`: Contains the screenshots generated from the Google Spreadsheet (`spreadsheet*.png`).

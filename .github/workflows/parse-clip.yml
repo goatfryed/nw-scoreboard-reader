@@ -36,6 +36,10 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials.json
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3: ${{ vars.AWS_ENDPOINT_URL_S3 }}
+          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}
 
       - name: Upload Scoreboard Artifacts
         uses: actions/upload-artifact@v5
@@ -43,7 +47,7 @@ jobs:
           name: scoreboard-pipeline-results
           path: |
             .tmp/scoreboard.csv
-            .tmp/stitched.png
+            .tmp/scoreboard.png
           include-hidden-files: true
 
       - name: Take screenshots
